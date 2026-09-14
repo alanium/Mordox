@@ -648,7 +648,10 @@ local function onCharacter(player, char)
 	f.stamina = Config.Stamina.Max
 	f.pitch = 0
 	f.sprint = false
-	local hrp = char:WaitForChild("HumanoidRootPart")
+	char:WaitForChild("HumanoidRootPart")
+	if not char:IsDescendantOf(workspace) then
+		char.AncestryChanged:Wait()
+	end
 	char:PivotTo(pickSpawn())
 	for _, d in ipairs(char:GetChildren()) do
 		if d.Name == "Tabard" or d.Name == "TabardBack" then
@@ -667,7 +670,6 @@ local function onCharacter(player, char)
 			end
 		end)
 	end)
-	hrp:SetNetworkOwner(player)
 end
 
 Players.PlayerAdded:Connect(function(player)
