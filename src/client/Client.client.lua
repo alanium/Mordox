@@ -489,9 +489,11 @@ local function predictAttack(kind, angle)
 	end
 	local st = char:GetAttribute("St")
 	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "longsword")
-	if st == "idle" or st == "riposte" then
+	local phase = char:GetAttribute("Phase")
+	local comboable = st == "attack" and phase == "recovery" and (char:GetAttribute("Stamina") or 0) >= Config.Stamina.ComboMin
+	if st == "idle" or st == "riposte" or comboable then
 		local data = kind == "stab" and weapon.Stab or weapon.Slash
-		local scale = st == "riposte" and Config.Combat.RiposteWindupScale or 1
+		local scale = st == "riposte" and Config.Combat.RiposteWindupScale or (comboable and Config.Combat.ComboWindupScale or 1)
 		predicted = { State = "attack", Kind = kind, Angle = angle, Phase = "windup", PhaseStart = serverNow(), PhaseDur = data.Windup * scale, at = os.clock() }
 	end
 end
@@ -618,6 +620,8 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 		sound(pick(SOUNDS.clash), a, 0.8)
 	elseif kind == "kick" then
 		sound(pick(SOUNDS.kick), a, 1)
+	elseif kind == "combo" then
+		sound(pick(SOUNDS.swing), a, 0.4)
 	elseif kind == "feint" then
 		sound(pick(SOUNDS.feint), a, 0.5)
 	elseif kind == "death" then
@@ -701,9 +705,9 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 		if turn.yaw and dt > 0 then
 			local rate = math.deg(math.abs((yaw - turn.yaw + math.pi) % (2 * math.pi) - math.pi)) / dt
 			turn.rate = rate
-			local target = 1
+			local target = attacking and Config.Combat.AttackSensitivity or 1
 			if attacking and rate > Config.Combat.TurnCap then
-				target = math.clamp(turn.sens * Config.Combat.TurnCap / rate, 0.15, 1)
+				target = math.clamp(math.min(target, turn.sens * Config.Combat.TurnCap / rate), 0.15, 1)
 			end
 			turn.sens += (target - turn.sens) * (attacking and 0.6 or 0.2)
 			UserInputService.MouseDeltaSensitivity = turn.sens
@@ -817,7 +821,8 @@ RunService.RenderStepped:Connect(function(dt)
 	arrow.Position = UDim2.new(0.5, math.sin(math.rad(angle)) * 26, 0.5, -math.cos(math.rad(angle)) * 26)
 	arrow.Rotation = angle
 	local st = char and char:GetAttribute("St") or ""
-	stateText.Text = st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
+	local combo = char and char:GetAttribute("Combo") or 0
+	stateText.Text = combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
 	loadout.Visible = dead

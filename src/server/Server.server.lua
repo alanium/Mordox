@@ -285,7 +285,28 @@ local function startAttack(f, kind, angle, windupScale, flags)
 	end
 end
 
+-- combo (como Mordhau): desde el final del golpe o la recuperación, pegue o no; cuesta stamina creciente
+local function tryCombo(f, kind, angle)
+	local S = Config.Stamina
+	local cost = S.Combo + S.ComboStep * (f.comboCount or 0)
+	if f.stamina < math.max(S.ComboMin, cost) then
+		return false
+	end
+	spendStamina(f, cost)
+	local count = (f.comboCount or 0) + 1
+	startAttack(f, kind, angle, Config.Combat.ComboWindupScale)
+	f.comboCount = count
+	f.char:SetAttribute("Combo", count)
+	FxEvent:FireAllClients("combo", f.char.HumanoidRootPart.Position, count)
+	return true
+end
+
 local function toIdle(f)
+	f.comboCount = 0
+	f.bufferedCombo = nil
+	if f.char then
+		f.char:SetAttribute("Combo", 0)
+	end
 	setState(f, "idle")
 	if f.hum then
 		f.hum.WalkSpeed = f.sprint and Config.SprintSpeed or Config.WalkSpeed
@@ -505,7 +526,11 @@ local function tick(f, dt)
 				if not f.hitSomething then
 					spendStamina(f, Config.Stamina.Miss)
 				end
-				startPhase(f, "recovery", attackData(f).Recovery)
+				local buffered = f.bufferedCombo
+				f.bufferedCombo = nil
+				if not (buffered and now() - buffered.at <= Config.Combat.ComboBufferTime + attackData(f).Release and tryCombo(f, buffered.kind, buffered.angle)) then
+					startPhase(f, "recovery", attackData(f).Recovery)
+				end
 			end
 		elseif f.phase == "recovery" and elapsed >= f.phaseDur then
 			toIdle(f)
@@ -610,9 +635,11 @@ CombatEvent.OnServerEvent:Connect(function(player, action, a1, a2)
 				f.phaseStart = t - frac * f.phaseDur
 				setAttr(f)
 			end
-		elseif f.state == "attack" and f.phase == "recovery" and f.hitSomething then
-			-- combo: encadenar desde la recuperación de un golpe que pegó
-			startAttack(f, kind, angle, c.ComboWindupScale)
+		elseif f.state == "attack" and f.phase == "release" then
+			-- clic durante el impacto: queda guardado y encadena al terminar
+			f.bufferedCombo = { kind = kind, angle = angle, at = t }
+		elseif f.state == "attack" and f.phase == "recovery" then
+			tryCombo(f, kind, angle)
 		end
 	elseif action == "feint" then
 		if f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout

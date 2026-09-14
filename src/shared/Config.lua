@@ -25,6 +25,9 @@ Config.Stamina = {
 	Morph = 10,
 	Miss = 4, -- golpe que no toca a nadie
 	Kick = 12,
+	Combo = 6, -- costo extra por encadenar un golpe
+	ComboStep = 3, -- cada golpe más de la cadena cuesta esto más
+	ComboMin = 8, -- stamina mínima para poder encadenar
 	KickDrain = 18, -- lo que le saca una patada al que para
 	DisarmTime = 1.6, -- quedarse sin stamina bloqueando = te desarman
 }
@@ -46,8 +49,10 @@ Config.Combat = {
 	KickWindup = 0.35,
 	KickRecovery = 0.5,
 	BounceRecovery = 0.55, -- golpe contra pared o parado
-	ComboWindupScale = 0.8, -- encadenar golpe desde la recuperación de uno que pegó
+	ComboWindupScale = 0.8, -- carga más corta al encadenar
+	ComboBufferTime = 0.35, -- clic durante el golpe: se guarda y encadena apenas termina el impacto
 	ArmReach = 1.4, -- distancia del pecho a las manos
+	AttackSensitivity = 0.55, -- el mouse se mueve más lento mientras cargás y golpeás
 	TurnCap = 540, -- grados por segundo máximo de giro durante el golpe (drag/accel)
 }
 
