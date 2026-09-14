@@ -24,6 +24,10 @@ CombatEvent.Parent = remotes
 local FxEvent = Instance.new("RemoteEvent")
 FxEvent.Name = "Fx"
 FxEvent.Parent = remotes
+-- mirada del jugador 30 veces por segundo (canal rápido, se puede perder alguno): orienta el barrido de la hoja
+local LookEvent = Instance.new("UnreliableRemoteEvent")
+LookEvent.Name = "Look"
+LookEvent.Parent = remotes
 remotes.Parent = ReplicatedStorage
 
 local matchInfo = Instance.new("Folder")
@@ -329,6 +333,10 @@ local function killed(victim, killer, weaponName)
 		end
 	end
 	FxEvent:FireAllClients("kill", killer and killer.player.Name or "", victim.player.Name, weaponName or "")
+	local vhrp = victim.char and victim.char:FindFirstChild("HumanoidRootPart")
+	if vhrp then
+		FxEvent:FireAllClients("death", vhrp.Position)
+	end
 end
 
 local function applyDamage(attacker, defender, amount, zone, hitPos)
@@ -338,7 +346,7 @@ local function applyDamage(attacker, defender, amount, zone, hitPos)
 	end
 	hum:TakeDamage(amount)
 	defender.lastHitBy = attacker
-	FxEvent:FireAllClients("hit", hitPos, zone, amount)
+	FxEvent:FireAllClients("hit", hitPos, zone, amount, attacker.weapon.Slash.Type)
 	if hum.Health <= 0 then
 		killed(defender, attacker, attacker.weapon.Name)
 		return
@@ -369,7 +377,7 @@ local function resolveHit(a, d, hitPart, hitPos)
 	if blocking and facing(d, a) >= (d.state == "block" and c.ShieldCone or c.ParryCone) then
 		local drain = d.state == "block" and (d.weapon.ShieldDrainPerHit or 10) or a.weapon.ParryDrain
 		bounce(a)
-		FxEvent:FireAllClients("parry", hitPos)
+		FxEvent:FireAllClients(d.state == "block" and "block" or "parry", hitPos)
 		if d.stamina <= drain then
 			d.stamina = 0
 			disarm(d)
@@ -397,6 +405,36 @@ local function resolveHit(a, d, hitPart, hitPos)
 	applyDamage(a, d, data.Damage * Config.Zones[zone], zone, hitPos)
 end
 
+-- el golpe se orienta con la mirada (yaw) que manda el cliente: así girar la cámara acelera o frena la hoja (accel/drag)
+local function bodyFrame(f, hrp)
+	if f.yaw and now() - (f.lookAt or 0) < 0.5 then
+		return CFrame.new(hrp.Position) * CFrame.Angles(0, f.yaw, 0)
+	end
+	return hrp.CFrame
+end
+
+LookEvent.OnServerEvent:Connect(function(player, yaw, pitch)
+	local f = fighters[player]
+	if not f or type(yaw) ~= "number" or type(pitch) ~= "number" or yaw ~= yaw or pitch ~= pitch then
+		return
+	end
+	local c = Config.Combat
+	local t = now()
+	-- tope de giro durante carga y golpe (no se puede girar 360 para acelerar)
+	if f.yaw and f.state == "attack" and f.phase ~= "recovery" then
+		local dt = math.max(t - (f.lookAt or t), 1 / 60)
+		local delta = (yaw - f.yaw + math.pi) % (2 * math.pi) - math.pi
+		local maxTurn = math.rad(c.TurnCap) * dt * 1.25
+		yaw = f.yaw + math.clamp(delta, -maxTurn, maxTurn)
+	end
+	f.yaw = yaw
+	f.lookAt = t
+	f.pitch = math.clamp(pitch, -80, 80)
+	if f.char and math.abs((f.char:GetAttribute("Pitch") or 0) - f.pitch) >= 2 then
+		f.char:SetAttribute("Pitch", math.floor(f.pitch))
+	end
+end)
+
 local rayParams = RaycastParams.new()
 rayParams.FilterType = Enum.RaycastFilterType.Exclude
 
@@ -407,8 +445,11 @@ local function sweep(f, dt)
 		return
 	end
 	local st = { State = "attack", Kind = f.kind, Angle = f.angle, Phase = "release", T = (now() - f.phaseStart) / f.phaseDur }
-	local base, tip = Swing.WorldPose(hrp.CFrame, f.pitch, f.weapon, st)
+	local base, tip = Swing.WorldPose(bodyFrame(f, hrp), f.pitch, f.weapon, st)
 	local points = Swing.BladePoints(base, tip, 5)
+	if f.player:GetAttribute("Debug") then
+		FxEvent:FireClient(f.player, "dbgBlade", base, tip)
+	end
 	local prev = f.prevPoints
 	f.prevPoints = points
 	if not prev or f.hitDone then
@@ -421,6 +462,9 @@ local function sweep(f, dt)
 			local result = workspace:Raycast(prev[i], delta, rayParams)
 			if result then
 				local other = fighterOfPart(result.Instance)
+				if f.player:GetAttribute("Debug") then
+					FxEvent:FireClient(f.player, "dbgHit", prev[i], result.Position, other and true or false)
+				end
 				if other and other ~= f and not other.dead then
 					f.hitDone = true
 					resolveHit(f, other, result.Instance, result.Position)
@@ -521,6 +565,10 @@ CombatEvent.OnServerEvent:Connect(function(player, action, a1, a2)
 		end
 		return
 	end
+	if action == "debug" then
+		player:SetAttribute("Debug", a1 == true)
+		return
+	end
 	if action == "pitch" then
 		if f and type(a1) == "number" then
 			f.pitch = math.clamp(a1, -80, 80)
@@ -571,6 +619,7 @@ CombatEvent.OnServerEvent:Connect(function(player, action, a1, a2)
 			and f.stamina >= Config.Stamina.Feint then
 			spendStamina(f, Config.Stamina.Feint)
 			toIdle(f)
+			FxEvent:FireAllClients("feint", f.char.HumanoidRootPart.Position)
 		end
 	elseif action == "parry" then
 		local shield = f.weapon.Kind == "shield"

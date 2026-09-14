@@ -14,6 +14,7 @@ local Swing = require(ReplicatedStorage:WaitForChild("Swing"))
 local remotes = ReplicatedStorage:WaitForChild("MordoxRemotes")
 local CombatEvent = remotes:WaitForChild("Combat")
 local FxEvent = remotes:WaitForChild("Fx")
+local LookEvent = remotes:WaitForChild("Look")
 local matchInfo = ReplicatedStorage:WaitForChild("MordoxMatch")
 
 local player = Players.LocalPlayer
@@ -25,9 +26,30 @@ pcall(function()
 	StarterGui:SetCoreGuiEnabled(Enum.CoreGuiType.PlayerList, false)
 end)
 
+-- modo desarrollador (F3) y tope de giro
+local debugOn = false
+local debugParts = {}
+local turn = { yaw = nil, sens = 1, rate = 0 }
+
 local function serverNow()
 	return workspace:GetServerTimeNow()
 end
+
+-- Sonidos (biblioteca ProSoundEffects de Roblox: se pueden usar en cualquier juego)
+local SOUNDS = {
+	swing = { "rbxassetid://9119740226", "rbxassetid://9119710806", "rbxassetid://9119711581", "rbxassetid://9119711209" },
+	heavySwing = { "rbxassetid://9114156252", "rbxassetid://9114157869" },
+	parry = { "rbxassetid://9119072660", "rbxassetid://9119072674" },
+	block = { "rbxassetid://9116693083" },
+	cut = { "rbxassetid://9117331172", "rbxassetid://9113525391" },
+	blunt = { "rbxassetid://9113565276", "rbxassetid://9113525391" },
+	kick = { "rbxassetid://9120487736" },
+	clash = { "rbxassetid://9116764832" },
+	death = { "rbxassetid://9113475819" },
+	pain = { "rbxassetid://9114030538" },
+	disarm = { "rbxassetid://9114007026" },
+	feint = { "rbxassetid://9119711209" },
+}
 
 ---------------------------------------------------------------------------
 -- UI helpers
@@ -160,7 +182,10 @@ local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.ne
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · Tab: tabla · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · H: ocultar ayuda" })
+local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
+	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
+	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
 
 ---------------------------------------------------------------------------
 -- Armas (solo visuales, locales)
@@ -363,9 +388,25 @@ local function animateKnight(char, t, dt)
 		k.weaponId = weapon.Id
 	end
 	local st = poseState(readState(char), weapon, t)
-	local pitch = char == player.Character and k.localPitch or (char:GetAttribute("Pitch") or 0)
-	local base, tip, dir = Swing.WorldPose(hrp.CFrame, pitch, weapon, st)
+	local isLocal = char == player.Character
+	local pitch = isLocal and k.localPitch or (char:GetAttribute("Pitch") or 0)
 	local body = hrp.CFrame
+	if isLocal then
+		local look = camera.CFrame.LookVector
+		body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
+	end
+	local base, tip, dir = Swing.WorldPose(body, pitch, weapon, st)
+	-- sonido de la hoja cortando el aire al empezar cada golpe (para todos los caballeros)
+	local key = st.State .. st.Phase .. tostring(char:GetAttribute("PhaseStart"))
+	if key ~= k.soundKey then
+		k.soundKey = key
+		if st.State == "attack" and st.Phase == "release" then
+			k.playSwing = base
+		elseif st.State == "kick" and st.Phase == "windup" then
+			k.playKick = hrp.Position
+		end
+	end
+	k.body, k.pitch, k.st, k.weaponDef = body, pitch, st, weapon
 
 	-- brazo derecho a la empuñadura; el izquierdo más atrás en el mango (dos manos) o con el escudo
 	aimLimb(k.rArm, base, body:VectorToWorldSpace(Vector3.new(0.8, -1, 0.6)))
@@ -422,7 +463,7 @@ local function applyCameraMode()
 	end
 	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
 	if hum then
-		hum.CameraOffset = firstPerson and Vector3.new(0, 0.1, -0.4) or Vector3.new(2, 0.6, 0)
+		hum.CameraOffset = firstPerson and Vector3.new(0, 0.2, 0.1) or Vector3.new(2, 0.6, 0)
 		hum.AutoRotate = firstPerson
 	end
 end
@@ -430,6 +471,7 @@ end
 ---------------------------------------------------------------------------
 -- Input
 ---------------------------------------------------------------------------
+local fov, fovToast = 90, 0 -- campo de visión: [ y ]
 local mouseDir = Vector2.new(0.6, -0.4) -- dirección acumulada del mouse (x derecha, y arriba)
 local lastPitchSent = 0
 
@@ -501,6 +543,20 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		board.Visible = true
 	elseif input.KeyCode == Enum.KeyCode.H then
 		help.Visible = not help.Visible
+	elseif input.KeyCode == Enum.KeyCode.F3 then
+		debugOn = not debugOn
+		CombatEvent:FireServer("debug", debugOn)
+		if not debugOn then
+			for _, d in pairs(debugParts) do
+				if typeof(d) == "Instance" then
+					d:Destroy()
+				end
+			end
+			debugParts = {}
+		end
+	elseif input.KeyCode == Enum.KeyCode.LeftBracket or input.KeyCode == Enum.KeyCode.RightBracket then
+		fov = math.clamp(fov + (input.KeyCode == Enum.KeyCode.RightBracket and 5 or -5), 60, 120)
+		fovToast = os.clock()
 	end
 end)
 
@@ -525,6 +581,10 @@ end
 ---------------------------------------------------------------------------
 -- Efectos
 ---------------------------------------------------------------------------
+local function pick(list)
+	return list[math.random(#list)]
+end
+
 local function sound(id, pos, volume)
 	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
 	local s = new("Sound", { SoundId = id, Volume = volume or 0.8, RollOffMaxDistance = 120, Parent = p })
@@ -543,17 +603,46 @@ end
 FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 	if kind == "hit" then
 		sparks(a, Color3.fromRGB(170, 20, 20), 22)
-		sound("rbxasset://sounds/swordslash.wav", a, 0.9)
+		sound(pick(c == "blunt" and SOUNDS.blunt or SOUNDS.cut), a, 1)
+		if math.random() < 0.5 then
+			sound(pick(SOUNDS.pain), a, 0.5)
+		end
 	elseif kind == "parry" or kind == "chamber" then
 		sparks(a, Color3.fromRGB(255, 220, 120), 26)
-		sound("rbxasset://sounds/unsheath.wav", a, 1)
+		sound(pick(SOUNDS.parry), a, 1)
+	elseif kind == "block" then
+		sparks(a, Color3.fromRGB(255, 220, 120), 14)
+		sound(pick(SOUNDS.block), a, 1)
 	elseif kind == "clash" then
 		sparks(a, Color3.fromRGB(230, 230, 230), 10)
-		sound("rbxasset://sounds/unsheath.wav", a, 0.5)
+		sound(pick(SOUNDS.clash), a, 0.8)
 	elseif kind == "kick" then
-		sound("rbxasset://sounds/swordlunge.wav", a, 0.8)
+		sound(pick(SOUNDS.kick), a, 1)
+	elseif kind == "feint" then
+		sound(pick(SOUNDS.feint), a, 0.5)
+	elseif kind == "death" then
+		sound(pick(SOUNDS.death), a, 1)
 	elseif kind == "disarm" then
 		sparks(a, Color3.fromRGB(255, 160, 60), 30)
+		sound(pick(SOUNDS.disarm), a, 1)
+	elseif kind == "dbgBlade" then
+		if debugOn then
+			debugParts.server = debugParts.server or new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon,
+				Color = Color3.fromRGB(255, 60, 60), Transparency = 0.2, Parent = workspace })
+			local len = (b - a).Magnitude
+			debugParts.server.Size = Vector3.new(0.06, 0.06, len)
+			debugParts.server.CFrame = CFrame.lookAt((a + b) / 2, b)
+		end
+	elseif kind == "dbgHit" then
+		if debugOn then
+			local len = (b - a).Magnitude
+			local ray = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon, Color = Color3.fromRGB(255, 230, 60),
+				Size = Vector3.new(0.05, 0.05, math.max(len, 0.05)), CFrame = CFrame.lookAt((a + b) / 2, b), Parent = workspace })
+			local dot = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon, Shape = Enum.PartType.Ball,
+				Color = c and Color3.fromRGB(255, 230, 60) or Color3.fromRGB(120, 200, 255), Size = Vector3.one * 0.35, CFrame = CFrame.new(b), Parent = workspace })
+			Debris:AddItem(ray, 3)
+			Debris:AddItem(dot, 3)
+		end
 	elseif kind == "kill" then
 		local killer, victim, weaponName = a, b, c
 		if killer ~= "" and killer ~= victim then
@@ -593,12 +682,38 @@ RunService.Stepped:Connect(function(_, dt)
 end)
 
 -- primera persona: mostrar brazos propios (después de que la cámara de Roblox oculta el cuerpo)
-RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, function()
+RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	local char = player.Character
+	local k = char and knights[char]
+	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	-- el arma propia se dibuja con la cámara de este mismo cuadro: el drag y el accel se ven al instante
+	if k and hrp and k.weapon and k.weaponDef then
+		local look = camera.CFrame.LookVector
+		local body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
+		local pitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
+		local st = poseState(readState(char), k.weaponDef, serverNow())
+		local base, tip, dir = Swing.WorldPose(body, pitch, k.weaponDef, st)
+		placeParts(k.weapon.parts, CFrame.lookAt(base, base + dir, body.UpVector))
+		k.debugBase, k.debugTip = base, tip
+		-- tope de giro durante carga y golpe: baja la sensibilidad si girás más rápido que el límite
+		local yaw = math.atan2(-look.X, -look.Z)
+		local attacking = st.State == "attack" and st.Phase ~= "recovery"
+		if turn.yaw and dt > 0 then
+			local rate = math.deg(math.abs((yaw - turn.yaw + math.pi) % (2 * math.pi) - math.pi)) / dt
+			turn.rate = rate
+			local target = 1
+			if attacking and rate > Config.Combat.TurnCap then
+				target = math.clamp(turn.sens * Config.Combat.TurnCap / rate, 0.15, 1)
+			end
+			turn.sens += (target - turn.sens) * (attacking and 0.6 or 0.2)
+			UserInputService.MouseDeltaSensitivity = turn.sens
+		end
+		turn.yaw = yaw
+	end
 	if char and firstPerson then
 		for _, d in ipairs(char:GetChildren()) do
-			if d:IsA("BasePart") and (d.Name:find("Arm") or d.Name:find("Hand") or d.Name == "Pauldron") then
-				d.LocalTransparencyModifier = 0
+			if d:IsA("BasePart") and d.Name:find("Hand") then
+				d.LocalTransparencyModifier = 0 -- solo guanteletes y arma: brazos y hombreras taparían la pantalla
 			end
 		end
 	end
@@ -625,9 +740,73 @@ RunService.RenderStepped:Connect(function(dt)
 		if k then
 			k.localPitch = pitch
 		end
-		if os.clock() - lastPitchSent > 0.1 then
+		if os.clock() - lastPitchSent > 1 / 30 then
 			lastPitchSent = os.clock()
-			CombatEvent:FireServer("pitch", pitch)
+			local look = camera.CFrame.LookVector
+			LookEvent:FireServer(math.atan2(-look.X, -look.Z), pitch)
+		end
+	end
+
+	camera.FieldOfView = fov
+	if os.clock() - fovToast < 1.2 then
+		stateText.Text = "FOV " .. fov
+	end
+	-- sonidos de golpes en el aire (detectados en la animación)
+	for c2, kd in pairs(knights) do
+		if type(c2) ~= "string" then
+			if kd.playSwing then
+				sound(pick(kd.weaponDef and kd.weaponDef.Kind == "twohand" and kd.weaponDef.Id == "greataxe" and SOUNDS.heavySwing or SOUNDS.swing), kd.playSwing, 0.7)
+				kd.playSwing = nil
+			end
+			if kd.playKick then
+				sound(pick(SOUNDS.swing), kd.playKick, 0.4)
+				kd.playKick = nil
+			end
+		end
+	end
+	-- modo desarrollador (F3): hoja local (verde), rastro de la punta, hoja del servidor (rojo), cajas de golpe y datos
+	debugText.Visible = debugOn
+	if debugOn and char then
+		local k = knights[char]
+		if k and k.debugBase then
+			debugParts.blade = debugParts.blade or new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon,
+				Color = Color3.fromRGB(80, 255, 120), Transparency = 0.2, Parent = workspace })
+			local len = (k.debugTip - k.debugBase).Magnitude
+			debugParts.blade.Size = Vector3.new(0.05, 0.05, len)
+			debugParts.blade.CFrame = CFrame.lookAt((k.debugBase + k.debugTip) / 2, k.debugTip)
+			if k.lastTip and (k.lastTip - k.debugTip).Magnitude > 0.05 then
+				local seg = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon, Color = Color3.fromRGB(80, 200, 255),
+					Transparency = 0.3, Size = Vector3.new(0.04, 0.04, (k.lastTip - k.debugTip).Magnitude),
+					CFrame = CFrame.lookAt((k.lastTip + k.debugTip) / 2, k.debugTip), Parent = workspace })
+				Debris:AddItem(seg, 1.2)
+			end
+			k.lastTip = k.debugTip
+		end
+		for _, p in ipairs(Players:GetPlayers()) do
+			local c3 = p.Character
+			if c3 and not c3:FindFirstChild("MordoxHitbox") then
+				for _, bp in ipairs(c3:GetChildren()) do
+					if bp:IsA("BasePart") and bp.Name ~= "HumanoidRootPart" and bp.CanQuery then
+						new("SelectionBox", { Name = "MordoxHitbox", Adornee = bp, LineThickness = 0.02, Color3 = Color3.fromRGB(255, 80, 200), Parent = c3 })
+					end
+				end
+			end
+		end
+		local st2 = k and k.st
+		debugText.Text = string.format("MODO DESARROLLADOR\nestado  %s %s  T=%.2f\nángulo  %d   tipo %s\nstamina %s\nping    %d ms\ngiro    %.0f°/s (tope %d)\nsens.   %.2f\nFOV     %d\nverde = hoja local · roja = servidor\namarillo = impacto en jugador · celeste = pared",
+			st2 and st2.State or "-", st2 and st2.Phase or "", st2 and st2.T or 0, st2 and st2.Angle or 0, st2 and st2.Kind or "",
+			tostring(char:GetAttribute("Stamina")), math.floor(player:GetNetworkPing() * 1000),
+			turn.rate, Config.Combat.TurnCap, turn.sens, fov)
+	elseif not debugOn then
+		for _, p in ipairs(Players:GetPlayers()) do
+			local c3 = p.Character
+			if c3 then
+				for _, sb in ipairs(c3:GetChildren()) do
+					if sb.Name == "MordoxHitbox" then
+						sb:Destroy()
+					end
+				end
+			end
 		end
 	end
 
