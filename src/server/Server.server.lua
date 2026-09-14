@@ -808,6 +808,42 @@ local botPlayers = Instance.new("Folder")
 botPlayers.Name = "MordoxBotPlayers"
 botPlayers.Parent = game:GetService("ServerStorage")
 local botRng = Random.new()
+local PathfindingService = game:GetService("PathfindingService")
+
+-- camino alrededor de paredes y cajas hacia el rival (se recalcula cada medio segundo)
+local function botWalk(f, hrp, goal)
+	local t = now()
+	if not f.path or t - f.pathAt > 0.5 or (f.pathGoal - goal).Magnitude > 4 then
+		f.pathAt, f.pathGoal = t, goal
+		local path = PathfindingService:CreatePath({ AgentRadius = 2.2, AgentHeight = 5.5, AgentCanJump = false, WaypointSpacing = 4 })
+		local ok = pcall(function()
+			path:ComputeAsync(hrp.Position, goal)
+		end)
+		if ok and path.Status == Enum.PathStatus.Success then
+			f.path, f.pathIndex = path:GetWaypoints(), 2
+		else
+			f.path, f.pathIndex = nil, nil
+		end
+	end
+	local wp = f.path and f.path[f.pathIndex]
+	while wp and ((wp.Position - hrp.Position) * Vector3.new(1, 0, 1)).Magnitude < 2.5 and f.pathIndex < #f.path do
+		f.pathIndex += 1
+		wp = f.path[f.pathIndex]
+	end
+	f.hum:MoveTo(wp and wp.Position or goal)
+	-- trabado contra algo: saltar
+	if f.lastPos and (hrp.Position - f.lastPos).Magnitude < 0.15 then
+		f.stuck = (f.stuck or 0) + 1
+		if f.stuck > 8 then
+			f.hum.Jump = true
+			f.stuck = 0
+			f.path = nil
+		end
+	else
+		f.stuck = 0
+	end
+	f.lastPos = hrp.Position
+end
 
 local function nearestEnemy(f)
 	local hrp = f.char and f.char:FindFirstChild("HumanoidRootPart")
@@ -846,7 +882,7 @@ local function botThink(f)
 	-- moverse hasta quedar a distancia de espada y mirar al rival
 	if dist > 5.2 then
 		f.hum.AutoRotate = true
-		f.hum:MoveTo(thrp.Position - dir * 4)
+		botWalk(f, hrp, thrp.Position - dir * 4)
 	else
 		f.hum.AutoRotate = false
 		f.hum:Move(dist < 3 and -dir or Vector3.zero)
