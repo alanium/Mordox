@@ -409,10 +409,20 @@ local function animateKnight(char, t, dt)
 	k.body, k.pitch, k.st, k.weaponDef = body, pitch, st, weapon
 
 	-- brazo derecho a la empuñadura; el izquierdo más atrás en el mango (dos manos) o con el escudo
-	aimLimb(k.rArm, base, body:VectorToWorldSpace(Vector3.new(0.8, -1, 0.6)))
+	-- el codo apunta hacia afuera y abajo; si la mano cruza al otro lado, hacia adelante para no meterse en el pecho
+	local function elbowPole(hand, side)
+		local localHand = body:PointToObjectSpace(hand)
+		local crossed = math.clamp(-side * localHand.X / 1.2, 0, 1)
+		return body:VectorToWorldSpace(Vector3.new(side * (1 - crossed), -1, 0.3 - crossed * 1.3))
+	end
+	local function clearWorld(p)
+		return body:PointToWorldSpace(Swing.ClearBody(body:PointToObjectSpace(p)))
+	end
+	aimLimb(k.rArm, base, elbowPole(base, 1))
 	local gripCF = CFrame.lookAt(base, base + dir, body.UpVector)
 	if weapon.Kind == "twohand" then
-		aimLimb(k.lArm, base - dir * 0.55, body:VectorToWorldSpace(Vector3.new(-0.8, -1, 0.6)))
+		local leftHand = clearWorld(base - dir * 0.55)
+		aimLimb(k.lArm, leftHand, elbowPole(leftHand, -1))
 	else
 		local blocking = st.State == "block"
 		local shieldPos = body:PointToWorldSpace(blocking and Vector3.new(-0.15, 1.2, -1.35) or Vector3.new(-0.9, 0.35, -0.8))
@@ -594,6 +604,38 @@ local function sound(id, pos, volume)
 	Debris:AddItem(p, 3)
 end
 
+-- chispazo grande: chispas rápidas + destello + humo metálico y sacudida de cámara si estás cerca
+local shake = { amount = 0 }
+
+local function bigClash(pos, color)
+	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
+	local fast = new("ParticleEmitter", { Color = ColorSequence.new(Color3.new(1, 1, 0.85), color), LightEmission = 1, LightInfluence = 0,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.18), NumberSequenceKeypoint.new(1, 0) }),
+		Lifetime = NumberRange.new(0.15, 0.5), Speed = NumberRange.new(18, 40), Drag = 4, Acceleration = Vector3.new(0, -35, 0),
+		SpreadAngle = Vector2.new(180, 180), Rate = 0, Orientation = Enum.ParticleOrientation.VelocityParallel, Parent = p })
+	fast:Emit(60)
+	local glow = new("ParticleEmitter", { Color = ColorSequence.new(color), LightEmission = 1, LightInfluence = 0,
+		Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1.6), NumberSequenceKeypoint.new(1, 0) }),
+		Transparency = NumberSequence.new(0.1, 1), Lifetime = NumberRange.new(0.12, 0.18), Speed = NumberRange.new(0, 0), Rate = 0, Parent = p })
+	glow:Emit(3)
+	local smoke = new("ParticleEmitter", { Color = ColorSequence.new(Color3.fromRGB(180, 175, 170)), LightInfluence = 1,
+		Size = NumberSequence.new(0.4, 1.4), Transparency = NumberSequence.new(0.6, 1), Lifetime = NumberRange.new(0.5, 0.9),
+		Speed = NumberRange.new(1, 3), SpreadAngle = Vector2.new(180, 180), Rate = 0, Parent = p })
+	smoke:Emit(6)
+	local light = new("PointLight", { Color = color, Range = 14, Brightness = 6, Shadows = false, Parent = p })
+	task.delay(0.08, function()
+		light.Brightness = 2
+	end)
+	task.delay(0.16, function()
+		light:Destroy()
+	end)
+	Debris:AddItem(p, 1.2)
+	local dist = (camera.CFrame.Position - pos).Magnitude
+	if dist < 18 then
+		shake.amount = math.max(shake.amount, 0.35 * (1 - dist / 18))
+	end
+end
+
 local function sparks(pos, color, count)
 	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
 	local e = new("ParticleEmitter", { Color = ColorSequence.new(color), LightEmission = 0.6, Size = NumberSequence.new(0.25, 0),
@@ -610,8 +652,15 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 			sound(pick(SOUNDS.pain), a, 0.5)
 		end
 	elseif kind == "parry" or kind == "chamber" then
-		sparks(a, Color3.fromRGB(255, 220, 120), 26)
-		sound(pick(SOUNDS.parry), a, 1)
+		bigClash(a, Color3.fromRGB(255, 200, 90))
+		sound(pick(SOUNDS.parry), a, 1.2)
+		if kind == "chamber" then
+			sound(pick(SOUNDS.clash), a, 1)
+		end
+	elseif kind == "weaponclash" then
+		bigClash(a, Color3.fromRGB(255, 230, 150))
+		sound(pick(SOUNDS.parry), a, 1.3)
+		sound(pick(SOUNDS.clash), a, 1.1)
 	elseif kind == "block" then
 		sparks(a, Color3.fromRGB(255, 220, 120), 14)
 		sound(pick(SOUNDS.block), a, 1)
@@ -752,6 +801,11 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	camera.FieldOfView = fov
+	if shake.amount > 0.001 then
+		local a = shake.amount
+		camera.CFrame = camera.CFrame * CFrame.Angles(math.rad((math.random() - 0.5) * 6 * a), math.rad((math.random() - 0.5) * 6 * a), 0)
+		shake.amount = a * math.exp(-dt * 14)
+	end
 	if os.clock() - fovToast < 1.2 then
 		stateText.Text = "FOV " .. fov
 	end

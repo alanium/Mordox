@@ -473,8 +473,23 @@ local function sweep(f, dt)
 	end
 	local prev = f.prevPoints
 	f.prevPoints = points
+	f.blade = { base = base, tip = tip, at = now() }
 	if not prev or f.hitDone then
 		return
+	end
+	-- dos golpes que se cruzan en el aire: las hojas chocan y ambos rebotan
+	for _, other in pairs(fighters) do
+		local ob = other.blade
+		if other ~= f and not other.dead and other.state == "attack" and other.phase == "release" and not other.hitDone
+			and ob and now() - ob.at < 0.1 then
+			local dist, point = Swing.SegmentDistance(base:Lerp(tip, 0.3), tip, ob.base:Lerp(ob.tip, 0.3), ob.tip)
+			if dist < 0.7 then
+				bounce(f)
+				bounce(other)
+				FxEvent:FireAllClients("weaponclash", point)
+				return
+			end
+		end
 	end
 	rayParams.FilterDescendantsInstances = { char }
 	for i = #points, 1, -1 do

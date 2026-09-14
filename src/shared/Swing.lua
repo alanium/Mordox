@@ -42,9 +42,65 @@ function Swing.GuardDir(weapon)
 	return Vector3.new(0.15, 0.55, -0.82).Unit
 end
 
+-- Torso y cabeza como un cilindro elíptico: las manos lo rodean por delante en vez de atravesarlo
+local BODY = { halfX = 1.2, halfZ = 0.8, bottom = -1.4, top = 1.9 }
+
+function Swing.ClearBody(p)
+	if p.Y < BODY.bottom or p.Y > BODY.top then
+		return p
+	end
+	local nx, nz = p.X / BODY.halfX, p.Z / BODY.halfZ
+	local r = math.sqrt(nx * nx + nz * nz)
+	if r >= 1 then
+		return p
+	end
+	if r < 1e-3 or nz > 0.2 and math.abs(nx) < 0.5 then
+		-- en el centro o por la espalda: pasar por delante del pecho
+		return Vector3.new(p.X, p.Y, -BODY.halfZ)
+	end
+	return Vector3.new(nx / r * BODY.halfX, p.Y, nz / r * BODY.halfZ)
+end
+
+-- Distancia mínima entre dos segmentos (para que dos hojas choquen en el aire)
+function Swing.SegmentDistance(p1, q1, p2, q2)
+	local d1, d2, r = q1 - p1, q2 - p2, p1 - p2
+	local a, e, f = d1:Dot(d1), d2:Dot(d2), d2:Dot(r)
+	local s, t
+	if a <= 1e-6 and e <= 1e-6 then
+		return r.Magnitude, p1
+	end
+	if a <= 1e-6 then
+		s, t = 0, math.clamp(f / e, 0, 1)
+	else
+		local c = d1:Dot(r)
+		if e <= 1e-6 then
+			t, s = 0, math.clamp(-c / a, 0, 1)
+		else
+			local b = d1:Dot(d2)
+			local denom = a * e - b * b
+			s = denom ~= 0 and math.clamp((b * f - c * e) / denom, 0, 1) or 0
+			t = (b * s + f) / e
+			if t < 0 then
+				t, s = 0, math.clamp(-c / a, 0, 1)
+			elseif t > 1 then
+				t, s = 1, math.clamp((b - c) / a, 0, 1)
+			end
+		end
+	end
+	local c1, c2 = p1 + d1 * s, p2 + d2 * t
+	return (c1 - c2).Magnitude, (c1 + c2) / 2
+end
+
 -- Pose del arma en espacio local: posición de las manos (empuñadura) y dirección de la hoja
 -- st: { State, Kind ("slash"/"stab"), Angle, Phase ("windup"/"release"/"recovery"), T (0..1) }
+local rawPose
+
 function Swing.LocalPose(weapon, st)
+	local hands, dir = rawPose(weapon, st)
+	return Swing.ClearBody(hands), dir
+end
+
+rawPose = function(weapon, st)
 	local reach = Config.Combat.ArmReach
 	local guard = Swing.GuardDir(weapon)
 	local guardHands = PIVOT + Vector3.new(0.35, -0.35, -0.85)
@@ -95,7 +151,7 @@ function Swing.WorldPose(rootCF, pitch, weapon, st)
 	local hands, dir = Swing.LocalPose(weapon, st)
 	local tilt = CFrame.Angles(rad(math.clamp(pitch or 0, -60, 60) * 0.7), 0, 0)
 	local rel = hands - PIVOT
-	hands = PIVOT + tilt:VectorToWorldSpace(rel)
+	hands = Swing.ClearBody(PIVOT + tilt:VectorToWorldSpace(rel)) -- mirar arriba o abajo tampoco mete las manos en el cuerpo
 	dir = tilt:VectorToWorldSpace(dir)
 	local base = rootCF:PointToWorldSpace(hands)
 	local wdir = rootCF:VectorToWorldSpace(dir)
