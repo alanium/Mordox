@@ -1,0 +1,26 @@
+{
+  "name": "mordox",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "MordoxConfig": {
+        "$path": "src/shared/Config.lua"
+      },
+      "Swing": {
+        "$path": "src/shared/Swing.lua"
+      }
+    },
+    "ServerScriptService": {
+      "MordoxServer": {
+        "$path": "src/server/Server.server.lua"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "MordoxClient": {
+          "$path": "src/client/Client.client.lua"
+        }
+      }
+    }
+  }
+}
