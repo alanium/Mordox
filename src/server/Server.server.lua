@@ -228,7 +228,8 @@ buildKnight()
 ---------------------------------------------------------------------------
 -- Combate
 ---------------------------------------------------------------------------
-local fighters = {} -- [player] = estado
+local fighters = {} -- [player] = estado (los bots usan una carpeta como "jugador")
+local fighterByChar = setmetatable({}, { __mode = "k" })
 
 local function setAttr(f)
 	local char = f.char
@@ -324,8 +325,10 @@ end
 
 local function fighterOfPart(p)
 	local model = p:FindFirstAncestorOfClass("Model")
-	local plr = model and Players:GetPlayerFromCharacter(model)
-	return plr and fighters[plr]
+	while model and not fighterByChar[model] and model.Parent and model.Parent:IsA("Model") do
+		model = model.Parent
+	end
+	return model and fighterByChar[model]
 end
 
 local function facing(defender, attacker)
@@ -596,7 +599,7 @@ local function canAct(f)
 	return f and not f.dead and f.char and f.char.Parent and f.state ~= "stun" and f.state ~= "disarmed"
 end
 
-CombatEvent.OnServerEvent:Connect(function(player, action, a1, a2)
+local function handleAction(player, action, a1, a2)
 	local f = fighters[player]
 	if action == "loadout" then
 		if f and type(a1) == "string" then
@@ -697,7 +700,8 @@ CombatEvent.OnServerEvent:Connect(function(player, action, a1, a2)
 			startPhase(f, "windup", c.KickWindup)
 		end
 	end
-end)
+end
+CombatEvent.OnServerEvent:Connect(handleAction)
 
 ---------------------------------------------------------------------------
 -- Jugadores, reaparición y partida
@@ -725,6 +729,10 @@ local function spawnPlayer(player)
 	if not f or not player.Parent or matchInfo:GetAttribute("Phase") == "intermission" and f.char then
 		return
 	end
+	if f.isBot then
+		f.spawnBot()
+		return
+	end
 	player:LoadCharacter()
 end
 
@@ -733,6 +741,7 @@ local tabardIndex = 0
 local function onCharacter(player, char)
 	local f = fighters[player]
 	f.char = char
+	fighterByChar[char] = f
 	f.hum = char:WaitForChild("Humanoid")
 	f.dead = false
 	f.weapon = f.nextWeapon or f.weapon
@@ -787,6 +796,148 @@ end)
 
 Players.PlayerRemoving:Connect(function(player)
 	fighters[player] = nil
+end)
+
+---------------------------------------------------------------------------
+-- Caballeros de práctica (bots): usan las mismas acciones que un jugador
+---------------------------------------------------------------------------
+local botFolder = Instance.new("Folder")
+botFolder.Name = "MordoxBots"
+botFolder.Parent = workspace
+local botPlayers = Instance.new("Folder")
+botPlayers.Name = "MordoxBotPlayers"
+botPlayers.Parent = game:GetService("ServerStorage")
+local botRng = Random.new()
+
+local function nearestEnemy(f)
+	local hrp = f.char and f.char:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return nil
+	end
+	local best, bestDist = nil, math.huge
+	for _, other in pairs(fighters) do
+		local ohrp = other ~= f and not other.dead and other.char and other.char:FindFirstChild("HumanoidRootPart")
+		if ohrp then
+			local d = (ohrp.Position - hrp.Position).Magnitude
+			if d < bestDist then
+				best, bestDist = other, d
+			end
+		end
+	end
+	return best, bestDist
+end
+
+local ANGLES = { -135, -90, -45, 0, 45, 90, 135 }
+
+local function botThink(f)
+	if f.dead or not f.char or not f.hum or f.hum.Health <= 0 then
+		return
+	end
+	local hrp = f.char:FindFirstChild("HumanoidRootPart")
+	local target, dist = nearestEnemy(f)
+	if not target or not hrp then
+		f.hum:Move(Vector3.zero)
+		return
+	end
+	local t = now()
+	local thrp = target.char.HumanoidRootPart
+	local flat = (thrp.Position - hrp.Position) * Vector3.new(1, 0, 1)
+	local dir = flat.Magnitude > 0.1 and flat.Unit or hrp.CFrame.LookVector
+	-- moverse hasta quedar a distancia de espada y mirar al rival
+	if dist > 5.2 then
+		f.hum.AutoRotate = true
+		f.hum:MoveTo(thrp.Position - dir * 4)
+	else
+		f.hum.AutoRotate = false
+		f.hum:Move(dist < 3 and -dir or Vector3.zero)
+		local yaw = math.atan2(-dir.X, -dir.Z)
+		hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+		f.yaw, f.lookAt = yaw, t
+	end
+	local player = f.player
+	-- defensa: intentar parar cuando el golpe del rival está por salir
+	if target.state == "attack" and target.phase == "windup" and target.attackStart ~= f.readAttack and dist < 7 then
+		local remaining = target.phaseDur - (t - target.phaseStart)
+		if remaining < 0.22 then
+			f.readAttack = target.attackStart
+			if botRng:NextNumber() < 0.55 then
+				handleAction(player, "parry")
+				return
+			end
+		end
+	end
+	if dist > 6.5 then
+		return
+	end
+	-- ataque: riposte enseguida, combo a veces, patada si el rival se cubre
+	if f.state == "riposte" then
+		handleAction(player, "attack", botRng:NextNumber() < 0.3 and "stab" or "slash", ANGLES[botRng:NextInteger(1, #ANGLES)])
+	elseif f.state == "attack" and f.phase == "recovery" and f.attackStart ~= f.comboTried then
+		f.comboTried = f.attackStart
+		if botRng:NextNumber() < 0.35 then
+			handleAction(player, "attack", "slash", ANGLES[botRng:NextInteger(1, #ANGLES)])
+		end
+	elseif f.state == "idle" and t >= (f.nextAttack or 0) then
+		f.nextAttack = t + botRng:NextNumber(0.8, 1.9)
+		if target.state == "block" and botRng:NextNumber() < 0.5 then
+			handleAction(player, "kick")
+		else
+			handleAction(player, "attack", botRng:NextNumber() < 0.25 and "stab" or "slash", ANGLES[botRng:NextInteger(1, #ANGLES)])
+		end
+	end
+end
+
+for i = 1, Config.Match.Bots or 0 do
+	local botPlayer = Instance.new("Folder")
+	botPlayer.Name = "Dummy" .. (i > 1 and i or "")
+	botPlayer.Parent = botPlayers
+	local stats = Instance.new("Folder")
+	stats.Name = "leaderstats"
+	for _, n in ipairs({ "Kills", "Deaths" }) do
+		local v = Instance.new("IntValue")
+		v.Name = n
+		v.Parent = stats
+	end
+	stats.Parent = botPlayer
+	tabardIndex += 1
+	local f = {
+		player = botPlayer, isBot = true, state = "idle", stamina = Config.Stamina.Max,
+		weapon = Config.Weapons[(i - 1) % #Config.Weapons + 1], tabard = Config.Tabards[(tabardIndex - 1) % #Config.Tabards + 1],
+		phaseStart = 0, phaseDur = 0, pitch = 0,
+	}
+	fighters[botPlayer] = f
+	f.spawnBot = function()
+		if f.char then
+			f.char:Destroy()
+		end
+		local char = StarterPlayer.StarterCharacter:Clone()
+		char.Name = botPlayer.Name
+		char.Parent = botFolder
+		task.spawn(onCharacter, botPlayer, char)
+		task.defer(function()
+			local hrp = char:FindFirstChild("HumanoidRootPart")
+			if hrp and hrp:IsDescendantOf(workspace) then
+				pcall(function()
+					hrp:SetNetworkOwner(nil)
+				end)
+			end
+		end)
+	end
+	f.spawnBot()
+end
+
+task.spawn(function()
+	while true do
+		task.wait(0.1)
+		for _, f in pairs(fighters) do
+			if f.isBot then
+				local ok, err = pcall(botThink, f)
+				if not ok then
+					warn("bot:", err)
+				end
+			end
+		end
+	end
 end)
 
 -- ciclo de partida

@@ -374,6 +374,22 @@ local function knightData(char)
 	return k
 end
 
+-- suaviza la pose del arma en el espacio del cuerpo: una finta o un cambio brusco de estado vuelve a la guardia sin salto.
+-- Durante el impacto no se suaviza, para que lo que se ve sea exactamente lo que pega.
+local function smoothWeapon(sm, body, base, dir, st, dt, length)
+	local localBase, localDir = body:PointToObjectSpace(base), body:VectorToObjectSpace(dir)
+	if not sm.base or (st.State == "attack" and st.Phase == "release") then
+		sm.base, sm.dir = localBase, localDir
+	else
+		local k = 1 - math.exp(-dt * 14)
+		sm.base = sm.base:Lerp(localBase, k)
+		local d = sm.dir:Lerp(localDir, k)
+		sm.dir = d.Magnitude > 1e-3 and d.Unit or localDir
+	end
+	local b, d = body:PointToWorldSpace(sm.base), body:VectorToWorldSpace(sm.dir)
+	return b, b + d * length, d
+end
+
 local function animateKnight(char, t, dt)
 	local hrp = char:FindFirstChild("HumanoidRootPart")
 	local hum = char:FindFirstChildOfClass("Humanoid")
@@ -396,6 +412,8 @@ local function animateKnight(char, t, dt)
 		body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
 	end
 	local base, tip, dir = Swing.WorldPose(body, pitch, weapon, st)
+	k.smAnim = k.smAnim or {}
+	base, tip, dir = smoothWeapon(k.smAnim, body, base, dir, st, dt, weapon.Length)
 	-- sonido de la hoja cortando el aire al empezar cada golpe (para todos los caballeros)
 	local key = st.State .. st.Phase .. tostring(char:GetAttribute("PhaseStart"))
 	if key ~= k.soundKey then
@@ -713,15 +731,19 @@ end)
 RunService.Stepped:Connect(function(_, dt)
 	local t = serverNow()
 	local alive = {}
+	local chars = {}
 	for _, p in ipairs(Players:GetPlayers()) do
-		local char = p.Character
-		if char then
-			alive[char] = true
-			local ok, st = pcall(animateKnight, char, t, dt)
-			if ok and p == player then
-				knights.localState = st
-			end
+		if p.Character then
+			table.insert(chars, p.Character)
 		end
+	end
+	local bots = workspace:FindFirstChild("MordoxBots")
+	for _, c in ipairs(bots and bots:GetChildren() or {}) do
+		table.insert(chars, c)
+	end
+	for _, char in ipairs(chars) do
+		alive[char] = true
+		pcall(animateKnight, char, t, dt)
 	end
 	for char, k in pairs(knights) do
 		if type(char) ~= "string" and not alive[char] then
@@ -746,8 +768,10 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 		local pitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
 		local st = poseState(readState(char), k.weaponDef, serverNow())
 		local base, tip, dir = Swing.WorldPose(body, pitch, k.weaponDef, st)
+		k.debugBase, k.debugTip = base, tip -- la línea de F3 muestra la hoja real, sin suavizar
+		k.smView = k.smView or {}
+		base, tip, dir = smoothWeapon(k.smView, body, base, dir, st, dt, k.weaponDef.Length)
 		placeParts(k.weapon.parts, CFrame.lookAt(base, base + dir, body.UpVector))
-		k.debugBase, k.debugTip = base, tip
 		-- tope de giro durante carga y golpe: baja la sensibilidad si girás más rápido que el límite
 		local yaw = math.atan2(-look.X, -look.Z)
 		local attacking = st.State == "attack" and st.Phase ~= "recovery"
@@ -762,13 +786,6 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 			UserInputService.MouseDeltaSensitivity = turn.sens
 		end
 		turn.yaw = yaw
-	end
-	if char and firstPerson then
-		for _, d in ipairs(char:GetChildren()) do
-			if d:IsA("BasePart") and d.Name:find("Hand") then
-				d.LocalTransparencyModifier = 0 -- solo guanteletes y arma: brazos y hombreras taparían la pantalla
-			end
-		end
 	end
 end)
 
