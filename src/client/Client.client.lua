@@ -381,7 +381,12 @@ local function smoothWeapon(sm, body, base, dir, st, dt, length)
 	if not sm.base or (st.State == "attack" and st.Phase == "release") then
 		sm.base, sm.dir = localBase, localDir
 	else
-		local k = 1 - math.exp(-dt * 14)
+		local k = 1 - math.exp(-dt * 12)
+		if st.State == "attack" and st.Phase == "windup" then
+			-- combos: la carga nace desde donde terminó el golpe anterior y llega exacta al impacto
+			local tt = math.clamp(st.T or 0, 0, 1)
+			k = k + (1 - k) * tt * tt * tt
+		end
 		sm.base = sm.base:Lerp(localBase, k)
 		local d = sm.dir:Lerp(localDir, k)
 		sm.dir = d.Magnitude > 1e-3 and d.Unit or localDir
