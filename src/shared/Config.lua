@@ -12,6 +12,7 @@ Config.Match = {
 	Bots = 1, -- caballeros de práctica controlados por el servidor (0 = ninguno)
 	BotsDealDamage = false, -- el dummy pega (stun, chispas) pero no te saca vida
 	BotsImmortal = true, -- al dummy le baja la vida, pero al llegar a 0 se recarga en vez de morir
+	SlowMotion = 4, -- cámara lenta (F4): todo el combate dura 4 veces más
 	BotsMove = false, -- false = el dummy se queda quieto en su lugar, pero pega, para y ripostea
 }
 

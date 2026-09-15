@@ -35,6 +35,10 @@ local function serverNow()
 	return workspace:GetServerTimeNow()
 end
 
+local function TS()
+	return matchInfo:GetAttribute("TimeScale") or 1
+end
+
 -- Sonidos (biblioteca ProSoundEffects de Roblox: se pueden usar en cualquier juego)
 local SOUNDS = {
 	swing = { "rbxassetid://9119740226", "rbxassetid://9119710806", "rbxassetid://9119711581", "rbxassetid://9119711209" },
@@ -182,7 +186,7 @@ local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.ne
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · H: ocultar ayuda" })
 local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
 	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
@@ -287,9 +291,9 @@ local function poseState(st, weapon, t)
 		local data = s.Kind == "stab" and weapon.Stab or weapon.Slash
 		local over = t - st.PhaseStart - st.PhaseDur
 		if s.Phase == "windup" then
-			s.Phase, s.T = "release", math.clamp(over / data.Release, 0, 1)
+			s.Phase, s.T = "release", math.clamp(over / (data.Release * TS()), 0, 1)
 		elseif s.Phase == "release" then
-			s.Phase, s.T = "recovery", math.clamp(over / data.Recovery, 0, 1)
+			s.Phase, s.T = "recovery", math.clamp(over / (data.Recovery * TS()), 0, 1)
 		end
 	end
 	return s
@@ -485,6 +489,20 @@ local function animateKnight(char, t, dt)
 	placeParts(k.weapon.parts, gripCF)
 
 	-- piernas: paso según la velocidad horizontal; patada levanta la derecha
+	-- flinch: el torso se sacude hacia atrás al recibir un golpe
+	if k.flinchAt then
+		local ft = (os.clock() - k.flinchAt) / 0.35
+		local waist = char:FindFirstChild("UpperTorso") and char.UpperTorso:FindFirstChild("Waist")
+		if waist then
+			if ft < 1 then
+				local amt = math.sin(math.min(ft * 3, 1) * math.pi / 2) * (1 - ft)
+				waist.Transform = CFrame.Angles(math.rad(22 * amt), math.rad(12 * amt), 0)
+			else
+				waist.Transform = CFrame.identity
+				k.flinchAt = nil
+			end
+		end
+	end
 	if k.rLeg and k.lLeg then
 		local vel = hrp.AssemblyLinearVelocity * Vector3.new(1, 0, 1)
 		local speed = vel.Magnitude
@@ -555,7 +573,7 @@ local function predictAttack(kind, angle)
 	if st == "idle" or st == "riposte" or comboable or shieldRiposte then
 		local data = kind == "stab" and weapon.Stab or weapon.Slash
 		local scale = (st == "riposte" or shieldRiposte) and Config.Combat.RiposteWindupScale or (comboable and Config.Combat.ComboWindupScale or 1)
-		predicted = { State = "attack", Kind = kind, Angle = angle, Phase = "windup", PhaseStart = serverNow(), PhaseDur = data.Windup * scale, at = os.clock() }
+		predicted = { State = "attack", Kind = kind, Angle = angle, Phase = "windup", PhaseStart = serverNow(), PhaseDur = data.Windup * scale * TS(), at = os.clock() }
 	end
 end
 
@@ -606,6 +624,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		board.Visible = true
 	elseif input.KeyCode == Enum.KeyCode.H then
 		help.Visible = not help.Visible
+	elseif input.KeyCode == Enum.KeyCode.F4 then
+		CombatEvent:FireServer("slowmo")
 	elseif input.KeyCode == Enum.KeyCode.F3 then
 		debugOn = not debugOn
 		CombatEvent:FireServer("debug", debugOn)
@@ -702,6 +722,28 @@ local function sparks(pos, color, count)
 	Debris:AddItem(p, 1)
 end
 
+-- marca de impacto en la mira (le pegaste) y viñeta roja (te pegaron)
+local hitMarker = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 34, 0, 34),
+	BackgroundTransparency = 1, Visible = false, Parent = gui })
+for _, rot in ipairs({ 45, -45 }) do
+	new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(1, 0, 0, 4),
+		Rotation = rot, BackgroundColor3 = Color3.fromRGB(255, 70, 60), BorderSizePixel = 0, Parent = hitMarker })
+end
+local vignette = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(160, 0, 0), BackgroundTransparency = 1,
+	BorderSizePixel = 0, ZIndex = 0, Parent = gui })
+local feedbackT = { marker = 0, vignette = 0 }
+
+local function flashCharacter(char)
+	if not char or not char.Parent then
+		return
+	end
+	local h = new("Highlight", { FillColor = Color3.fromRGB(255, 40, 30), FillTransparency = 0.35, OutlineColor = Color3.fromRGB(255, 220, 200),
+		OutlineTransparency = 0, DepthMode = Enum.HighlightDepthMode.Occluded, Parent = char })
+	task.delay(0.14, function()
+		h:Destroy()
+	end)
+end
+
 -- número de daño flotante
 local function damageNumber(pos, amount, color)
 	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
@@ -718,11 +760,27 @@ local function damageNumber(pos, amount, color)
 	end)
 end
 
-FxEvent.OnClientEvent:Connect(function(kind, a, b, c, d)
+FxEvent.OnClientEvent:Connect(function(kind, a, b, c, d, e, g)
 	if kind == "hit" then
 		sparks(a, Color3.fromRGB(170, 20, 20), 22)
 		sound(pick(d == "blunt" and SOUNDS.blunt or SOUNDS.cut), a, 1)
 		damageNumber(a, c or 0, b == "head" and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1))
+		-- el que recibe parpadea en rojo y retrocede; el que pega ve la marca en la mira y un temblor corto
+		flashCharacter(g)
+		if g then
+			local kd = knights[g]
+			if kd then
+				kd.flinchAt = os.clock()
+			end
+		end
+		if e == player.Name then
+			feedbackT.marker = os.clock()
+			shake.amount = math.max(shake.amount, 0.18)
+			sparks(a, Color3.fromRGB(255, 60, 40), 30)
+		elseif g == player.Character then
+			feedbackT.vignette = os.clock()
+			shake.amount = math.max(shake.amount, 0.3)
+		end
 	elseif kind == "dummyreset" then
 		showTech("¡DUMMY DERROTADO!", b, nil)
 	elseif kind == "tech" then
@@ -880,6 +938,15 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	camera.FieldOfView = fov
+	local mk = os.clock() - feedbackT.marker
+	hitMarker.Visible = mk < 0.25
+	hitMarker.Size = UDim2.new(0, 34 + (1 - math.clamp(mk / 0.25, 0, 1)) * 16, 0, 34 + (1 - math.clamp(mk / 0.25, 0, 1)) * 16)
+	vignette.BackgroundTransparency = 1 - 0.35 * math.clamp(1 - (os.clock() - feedbackT.vignette) / 0.35, 0, 1)
+	if TS() > 1 then
+		topBar.TextColor3 = Color3.fromRGB(120, 200, 255)
+	else
+		topBar.TextColor3 = WHITE
+	end
 	if shake.amount > 0.001 then
 		local a = shake.amount
 		camera.CFrame = camera.CFrame * CFrame.Angles(math.rad((math.random() - 0.5) * 6 * a), math.rad((math.random() - 0.5) * 6 * a), 0)
@@ -918,16 +985,6 @@ RunService.RenderStepped:Connect(function(dt)
 				Debris:AddItem(seg, 1.2)
 			end
 			k.lastTip = k.debugTip
-		end
-		for _, p in ipairs(Players:GetPlayers()) do
-			local c3 = p.Character
-			if c3 and not c3:FindFirstChild("MordoxHitbox") then
-				for _, bp in ipairs(c3:GetChildren()) do
-					if bp:IsA("BasePart") and bp.Name ~= "HumanoidRootPart" and bp.CanQuery then
-						new("SelectionBox", { Name = "MordoxHitbox", Adornee = bp, LineThickness = 0.02, Color3 = Color3.fromRGB(255, 80, 200), Parent = c3 })
-					end
-				end
-			end
 		end
 		local st2 = k and k.st
 		debugText.Text = string.format("MODO DESARROLLADOR\nestado  %s %s  T=%.2f\nángulo  %d   tipo %s\nstamina %s\nping    %d ms\ngiro    %.0f°/s (tope %d)\nsens.   %.2f\nFOV     %d\nverde = hoja local · roja = servidor\namarillo = impacto en jugador · celeste = pared",
@@ -979,6 +1036,6 @@ RunService.RenderStepped:Connect(function(dt)
 	else
 		banner.Visible = false
 		local s = player:FindFirstChild("leaderstats")
-		topBar.Text = string.format("%d:%02d   ·   Kills %d / %d", math.floor(left / 60), math.floor(left % 60), s and s.Kills.Value or 0, Config.Match.KillLimit)
+		topBar.Text = (TS() > 1 and "CÁMARA LENTA   ·   " or "") .. string.format("%d:%02d   ·   Kills %d / %d", math.floor(left / 60), math.floor(left % 60), s and s.Kills.Value or 0, Config.Match.KillLimit)
 	end
 end)

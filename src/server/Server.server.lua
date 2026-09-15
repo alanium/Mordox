@@ -38,6 +38,12 @@ local function now()
 	return workspace:GetServerTimeNow()
 end
 
+-- cámara lenta: multiplica la duración de todas las fases del combate
+local function TS()
+	return matchInfo:GetAttribute("TimeScale") or 1
+end
+matchInfo:SetAttribute("TimeScale", 1)
+
 ---------------------------------------------------------------------------
 -- Mapa: patio de castillo
 ---------------------------------------------------------------------------
@@ -250,7 +256,7 @@ local function setState(f, state, dur)
 	f.state = state
 	f.phase = ""
 	f.phaseStart = now()
-	f.phaseDur = dur or 0
+	f.phaseDur = (dur or 0) * TS()
 	f.kind = nil
 	setAttr(f)
 end
@@ -267,7 +273,7 @@ end
 local function startPhase(f, phase, dur)
 	f.phase = phase
 	f.phaseStart = now()
-	f.phaseDur = dur
+	f.phaseDur = dur * TS()
 	setAttr(f)
 end
 
@@ -370,7 +376,7 @@ local function applyDamage(attacker, defender, amount, zone, hitPos)
 		return
 	end
 	defender.lastHitBy = attacker
-	FxEvent:FireAllClients("hit", hitPos, zone, amount, attacker.weapon.Slash.Type)
+	FxEvent:FireAllClients("hit", hitPos, zone, amount, attacker.weapon.Slash.Type, attacker.player.Name, defender.char)
 	if attacker.isBot and not Config.Match.BotsDealDamage then
 		amount = 0 -- práctica: el dummy no saca vida
 	end
@@ -426,7 +432,7 @@ local function resolveHit(a, d, hitPart, hitPos)
 		if d.state == "parry" then
 			setState(d, "riposte", c.RiposteWindow)
 		else
-			d.riposteUntil = now() + c.RiposteWindow -- con escudo también se puede ripostear sin soltar el bloqueo
+			d.riposteUntil = now() + c.RiposteWindow * TS() -- con escudo también se puede ripostear sin soltar el bloqueo
 			d.char:SetAttribute("RiposteUntil", d.riposteUntil)
 		end
 		setAttr(d)
@@ -548,7 +554,7 @@ local function tick(f, dt)
 	local elapsed = t - f.phaseStart
 	-- stamina
 	if t - (f.lastSpend or 0) > Config.Stamina.RegenDelay and f.stamina < Config.Stamina.Max then
-		f.stamina = math.min(Config.Stamina.Max, f.stamina + Config.Stamina.RegenPerSecond * dt)
+		f.stamina = math.min(Config.Stamina.Max, f.stamina + Config.Stamina.RegenPerSecond * dt / TS())
 	end
 	local shown = math.floor(f.stamina + 0.5)
 	if f.char:GetAttribute("Stamina") ~= shown then
@@ -567,7 +573,7 @@ local function tick(f, dt)
 				end
 				local buffered = f.bufferedCombo
 				f.bufferedCombo = nil
-				if not (buffered and now() - buffered.at <= Config.Combat.ComboBufferTime + attackData(f).Release and tryCombo(f, buffered.kind, buffered.angle)) then
+				if not (buffered and now() - buffered.at <= (Config.Combat.ComboBufferTime + attackData(f).Release) * TS() and tryCombo(f, buffered.kind, buffered.angle)) then
 					startPhase(f, "recovery", attackData(f).Recovery)
 				end
 			end
@@ -582,7 +588,7 @@ local function tick(f, dt)
 		if f.phase == "windup" and elapsed >= f.phaseDur then
 			f.phase = "recovery"
 			f.phaseStart = t
-			f.phaseDur = Config.Combat.KickRecovery
+			f.phaseDur = Config.Combat.KickRecovery * TS()
 			setAttr(f)
 			-- patada: rompe el bloqueo y saca stamina
 			local hrp = f.char.HumanoidRootPart
@@ -629,6 +635,13 @@ local function handleAction(player, action, a1, a2)
 		end
 		return
 	end
+	if action == "slowmo" then
+		-- cámara lenta para practicar: solo el dueño del juego o en Studio (afecta a todo el servidor)
+		if RunService:IsStudio() or player.UserId == game.CreatorId then
+			matchInfo:SetAttribute("TimeScale", TS() > 1 and 1 or Config.Match.SlowMotion)
+		end
+		return
+	end
 	if action == "debug" then
 		player:SetAttribute("Debug", a1 == true)
 		return
@@ -668,12 +681,12 @@ local function handleAction(player, action, a1, a2)
 			FxEvent:FireAllClients("tech", f.char.HumanoidRootPart.Position, f.player.Name, "RIPOSTE")
 		elseif f.state == "attack" and f.phase == "windup" and (kind ~= f.kind or Swing.AngleDiff(angle, f.angle) > c.MorphAngle) then
 			-- morph: cambiar el golpe manteniendo lo que ya cargaste (también después de un chamber)
-			if f.phaseDur - elapsed > c.MorphLockout and f.stamina >= Config.Stamina.Morph then
+			if f.phaseDur - elapsed > c.MorphLockout * TS() and f.stamina >= Config.Stamina.Morph then
 				spendStamina(f, Config.Stamina.Morph)
 				local frac = math.clamp(elapsed / f.phaseDur, 0, 1)
 				local label = f.chambered and "CHAMBER MORPH" or "MORPH"
 				f.kind, f.angle = kind, angle
-				f.phaseDur = f.chambered and c.ChamberCounterWindup or attackData(f).Windup
+				f.phaseDur = (f.chambered and c.ChamberCounterWindup or attackData(f).Windup) * TS()
 				f.phaseStart = t - frac * f.phaseDur
 				f.morphed = true
 				setAttr(f)
@@ -687,7 +700,7 @@ local function handleAction(player, action, a1, a2)
 			tryCombo(f, kind, angle)
 		end
 	elseif action == "feint" then
-		if f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout
+		if f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout * TS()
 			and f.stamina >= Config.Stamina.Feint then
 			spendStamina(f, Config.Stamina.Feint)
 			local label = f.chambered and "CHAMBER FEINT" or f.morphed and "MORPH FEINT" or "FINTA"
@@ -696,7 +709,7 @@ local function handleAction(player, action, a1, a2)
 		end
 	elseif action == "parry" then
 		local shield = f.weapon.Kind == "shield"
-		local feintable = f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout
+		local feintable = f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout * TS()
 		if feintable then
 			if f.stamina < Config.Stamina.Feint then
 				return
@@ -932,7 +945,7 @@ local function botThink(f)
 	-- defensa: intentar parar cuando el golpe del rival está por salir
 	if target.state == "attack" and target.phase == "windup" and target.attackStart ~= f.readAttack and dist < 7 then
 		local remaining = target.phaseDur - (t - target.phaseStart)
-		if remaining < 0.22 then
+		if remaining < 0.22 * TS() then
 			f.readAttack = target.attackStart
 			if botRng:NextNumber() < 0.55 then
 				handleAction(player, "parry")
