@@ -568,7 +568,8 @@ local function predictAttack(kind, angle)
 	local st = char:GetAttribute("St")
 	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "longsword")
 	local phase = char:GetAttribute("Phase")
-	local comboable = st == "attack" and phase == "recovery" and (char:GetAttribute("Stamina") or 0) >= Config.Stamina.ComboMin
+	local comboable = st == "attack" and phase == "recovery" and char:GetAttribute("CanCombo") == true
+		and (char:GetAttribute("Stamina") or 0) >= Config.Stamina.ComboMin
 	local shieldRiposte = st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0)
 	if st == "idle" or st == "riposte" or comboable or shieldRiposte then
 		local data = kind == "stab" and weapon.Stab or weapon.Slash

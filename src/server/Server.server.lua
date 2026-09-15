@@ -287,6 +287,10 @@ local function startAttack(f, kind, angle, windupScale, flags)
 	f.attackStart = now()
 	f.hitSomething = false
 	f.chambered, f.morphed = false, false
+	f.queued = nil
+	if f.char then
+		f.char:SetAttribute("CanCombo", false)
+	end
 	startPhase(f, "windup", attackData(f).Windup * (windupScale or 1))
 	if f.hum then
 		f.hum.WalkSpeed = Config.AttackMoveSpeed / TS()
@@ -573,16 +577,28 @@ local function tick(f, dt)
 				end
 				local buffered = f.bufferedCombo
 				f.bufferedCombo = nil
-				if not (buffered and now() - buffered.at <= (Config.Combat.ComboBufferTime + attackData(f).Release) * TS() and tryCombo(f, buffered.kind, buffered.angle)) then
+				local comboed = f.hitSomething and buffered
+					and now() - buffered.at <= (Config.Combat.ComboBufferTime + attackData(f).Release) * TS()
+					and tryCombo(f, buffered.kind, buffered.angle)
+				if not comboed then
+					if buffered and not f.hitSomething then
+						f.queued = buffered -- golpe al aire: no hay combo, sale al terminar la recuperación
+					end
 					startPhase(f, "recovery", attackData(f).Recovery)
+					f.char:SetAttribute("CanCombo", f.hitSomething)
 				end
 			end
 		elseif f.phase == "recovery" and elapsed >= f.phaseDur then
+			local q = f.queued
+			f.queued = nil
 			toIdle(f)
+			if q and now() - q.at <= (Config.Combat.QueueTime + attackData(f).Recovery) * TS() then
+				startAttack(f, q.kind, q.angle)
+			end
 		end
 	elseif f.state == "parry" and elapsed >= f.phaseDur then
 		setState(f, "parryrec", Config.Combat.ParryRecovery)
-	elseif (f.state == "parryrec" or f.state == "riposte" or f.state == "stun" or f.state == "disarmed") and elapsed >= f.phaseDur then
+	elseif (f.state == "parryrec" or f.state == "riposte" or f.state == "stun" or f.state == "guardbroken" or f.state == "disarmed") and elapsed >= f.phaseDur then
 		toIdle(f)
 	elseif f.state == "kick" then
 		if f.phase == "windup" and elapsed >= f.phaseDur then
@@ -598,12 +614,19 @@ local function tick(f, dt)
 					local to = ohrp.Position - hrp.Position
 					if to.Magnitude <= Config.Combat.KickRange and hrp.CFrame.LookVector:Dot(to.Unit) > 0.5 then
 						FxEvent:FireAllClients("kick", ohrp.Position)
-						if other.state == "parry" or other.state == "block" or other.state == "riposte" then
+						local guarding = other.state == "parry" or other.state == "block" or other.state == "riposte" or other.state == "parryrec"
+						if guarding then
 							spendStamina(other, Config.Stamina.KickDrain)
 						end
 						applyDamage(f, other, 5, "torso", ohrp.Position)
 						if not other.dead then
-							setState(other, "stun", 0.6)
+							if guarding then
+								setState(other, "guardbroken", Config.Combat.GuardBreakStun)
+								FxEvent:FireAllClients("tech", ohrp.Position, f.player.Name, "GUARDIA ROTA")
+								FxEvent:FireAllClients("tech", ohrp.Position, other.player.Name, "TE ROMPIERON LA GUARDIA")
+							else
+								setState(other, "stun", 0.6)
+							end
 						end
 						break
 					end
@@ -623,7 +646,7 @@ end)
 
 -- entradas del cliente
 local function canAct(f)
-	return f and not f.dead and f.char and f.char.Parent and f.state ~= "stun" and f.state ~= "disarmed"
+	return f and not f.dead and f.char and f.char.Parent and f.state ~= "stun" and f.state ~= "guardbroken" and f.state ~= "disarmed"
 end
 
 local function handleAction(player, action, a1, a2)
@@ -708,7 +731,11 @@ local function handleAction(player, action, a1, a2)
 			-- clic durante el impacto: queda guardado y encadena al terminar
 			f.bufferedCombo = { kind = kind, angle = angle, at = t }
 		elseif f.state == "attack" and f.phase == "recovery" then
-			tryCombo(f, kind, angle)
+			if f.hitSomething then
+				tryCombo(f, kind, angle)
+			else
+				f.queued = { kind = kind, angle = angle, at = t } -- sin spam: espera a que la mano vuelva
+			end
 		end
 	elseif action == "feint" then
 		if f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout * TS()
