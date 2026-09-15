@@ -289,7 +289,7 @@ local function startAttack(f, kind, angle, windupScale, flags)
 	f.chambered, f.morphed = false, false
 	startPhase(f, "windup", attackData(f).Windup * (windupScale or 1))
 	if f.hum then
-		f.hum.WalkSpeed = Config.AttackMoveSpeed
+		f.hum.WalkSpeed = Config.AttackMoveSpeed / TS()
 	end
 end
 
@@ -317,7 +317,7 @@ local function toIdle(f)
 	end
 	setState(f, "idle")
 	if f.hum then
-		f.hum.WalkSpeed = f.sprint and Config.SprintSpeed or Config.WalkSpeed
+		f.hum.WalkSpeed = (f.sprint and Config.SprintSpeed or Config.WalkSpeed) / TS()
 	end
 end
 
@@ -639,6 +639,17 @@ local function handleAction(player, action, a1, a2)
 		-- cámara lenta para practicar: solo el dueño del juego o en Studio (afecta a todo el servidor)
 		if RunService:IsStudio() or player.UserId == game.CreatorId then
 			matchInfo:SetAttribute("TimeScale", TS() > 1 and 1 or Config.Match.SlowMotion)
+			-- movimiento y saltos también en cámara lenta: velocidad / escala, gravedad / escala²
+			local scale = TS()
+			workspace.Gravity = 196.2 / (scale * scale)
+			for _, other in pairs(fighters) do
+				if other.hum then
+					local base = other.state == "attack" and Config.AttackMoveSpeed or (other.sprint and Config.SprintSpeed or Config.WalkSpeed)
+					other.hum.WalkSpeed = base / scale
+					other.hum.UseJumpPower = true
+					other.hum.JumpPower = 50 / scale
+				end
+			end
 		end
 		return
 	end
@@ -659,7 +670,7 @@ local function handleAction(player, action, a1, a2)
 		if f then
 			f.sprint = a1 == true
 			if f.hum and f.state == "idle" then
-				f.hum.WalkSpeed = f.sprint and Config.SprintSpeed or Config.WalkSpeed
+				f.hum.WalkSpeed = (f.sprint and Config.SprintSpeed or Config.WalkSpeed) / TS()
 			end
 		end
 		return
@@ -724,7 +735,7 @@ local function handleAction(player, action, a1, a2)
 				setState(f, "parry", c.ParryWindow)
 			end
 			if f.hum then
-				f.hum.WalkSpeed = Config.AttackMoveSpeed
+				f.hum.WalkSpeed = Config.AttackMoveSpeed / TS()
 			end
 		end
 	elseif action == "unblock" then
@@ -788,6 +799,8 @@ local function onCharacter(player, char)
 	f.dead = false
 	f.weapon = f.nextWeapon or f.weapon
 	f.stamina = Config.Stamina.Max
+	f.hum.UseJumpPower = true
+	f.hum.JumpPower = 50 / TS()
 	f.pitch = 0
 	f.sprint = false
 	char:WaitForChild("HumanoidRootPart")
