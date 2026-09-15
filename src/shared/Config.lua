@@ -44,6 +44,8 @@ Config.Combat = {
 	MorphLockout = 0.1,
 	ChamberWindow = 0.25, -- iniciar el mismo golpe espejado dentro de esta ventana
 	ChamberAngle = 45,
+	ChamberCounterWindup = 0.4, -- carga del contragolpe tras un chamber (deja margen para chamber feint y chamber morph)
+	MorphAngle = 30, -- cambiar de dirección más que esto dentro del mismo tipo también es morph
 	HitStun = 0.35, -- flinch al recibir daño
 	ParryCone = 0.25, -- producto punto mínimo: el atacante tiene que estar adelante
 	ShieldCone = -0.1,
@@ -67,26 +69,26 @@ Config.Zones = { head = 1.35, torso = 1, legs = 0.8 }
 Config.Weapons = {
 	{
 		Id = "longsword", Name = "Espada larga", Kind = "twohand", Length = 3.6, Grip = 1.0,
-		Slash = { Windup = 0.42, Release = 0.3, Recovery = 0.38, Damage = 46, Type = "cut" },
-		Stab = { Windup = 0.45, Release = 0.26, Recovery = 0.4, Damage = 52, Type = "pierce" },
+		Slash = { Windup = 0.59, Release = 0.38, Recovery = 0.47, Damage = 46, Type = "cut" },
+		Stab = { Windup = 0.63, Release = 0.33, Recovery = 0.50, Damage = 52, Type = "pierce" },
 		ParryDrain = 16, Color = Color3.fromRGB(205, 210, 220),
 	},
 	{
 		Id = "greataxe", Name = "Hacha de guerra", Kind = "twohand", Length = 3.4, Grip = 1.2,
-		Slash = { Windup = 0.55, Release = 0.34, Recovery = 0.5, Damage = 64, Type = "cut" },
-		Stab = { Windup = 0.5, Release = 0.28, Recovery = 0.45, Damage = 38, Type = "blunt" },
+		Slash = { Windup = 0.77, Release = 0.43, Recovery = 0.62, Damage = 64, Type = "cut" },
+		Stab = { Windup = 0.70, Release = 0.35, Recovery = 0.56, Damage = 38, Type = "blunt" },
 		ParryDrain = 26, Color = Color3.fromRGB(150, 150, 160),
 	},
 	{
 		Id = "mace", Name = "Maza", Kind = "onehand", Length = 2.4, Grip = 0.4,
-		Slash = { Windup = 0.38, Release = 0.28, Recovery = 0.32, Damage = 40, Type = "blunt" },
-		Stab = { Windup = 0.42, Release = 0.24, Recovery = 0.36, Damage = 26, Type = "blunt" },
+		Slash = { Windup = 0.53, Release = 0.35, Recovery = 0.40, Damage = 40, Type = "blunt" },
+		Stab = { Windup = 0.59, Release = 0.30, Recovery = 0.45, Damage = 26, Type = "blunt" },
 		ParryDrain = 20, Color = Color3.fromRGB(120, 120, 130),
 	},
 	{
 		Id = "swordshield", Name = "Espada y escudo", Kind = "shield", Length = 2.6, Grip = 0.4,
-		Slash = { Windup = 0.36, Release = 0.27, Recovery = 0.32, Damage = 34, Type = "cut" },
-		Stab = { Windup = 0.38, Release = 0.24, Recovery = 0.34, Damage = 38, Type = "pierce" },
+		Slash = { Windup = 0.50, Release = 0.34, Recovery = 0.40, Damage = 34, Type = "cut" },
+		Stab = { Windup = 0.53, Release = 0.30, Recovery = 0.43, Damage = 38, Type = "pierce" },
 		ParryDrain = 12, ShieldDrainPerHit = 10, Color = Color3.fromRGB(215, 215, 225),
 	},
 }

@@ -280,6 +280,7 @@ local function startAttack(f, kind, angle, windupScale, flags)
 	f.isRiposte = flags and flags.riposte or false
 	f.attackStart = now()
 	f.hitSomething = false
+	f.chambered, f.morphed = false, false
 	startPhase(f, "windup", attackData(f).Windup * (windupScale or 1))
 	if f.hum then
 		f.hum.WalkSpeed = Config.AttackMoveSpeed
@@ -401,7 +402,7 @@ local function resolveHit(a, d, hitPart, hitPos)
 	if blocking and facing(d, a) >= (d.state == "block" and c.ShieldCone or c.ParryCone) then
 		local drain = d.state == "block" and (d.weapon.ShieldDrainPerHit or 10) or a.weapon.ParryDrain
 		bounce(a)
-		FxEvent:FireAllClients(d.state == "block" and "block" or "parry", hitPos)
+		FxEvent:FireAllClients(d.state == "block" and "block" or "parry", hitPos, d.player.Name, a.player.Name)
 		if d.stamina <= drain then
 			d.stamina = 0
 			disarm(d)
@@ -420,8 +421,11 @@ local function resolveHit(a, d, hitPart, hitPos)
 		and (a.kind == "stab" or Swing.AngleDiff(d.angle, Swing.MirrorAngle(a.angle)) <= c.ChamberAngle)
 		and facing(d, a) >= c.ParryCone then
 		bounce(a)
-		startPhase(d, "windup", 0.12) -- el contragolpe sale casi enseguida
-		FxEvent:FireAllClients("chamber", hitPos)
+		-- chamber: el contragolpe sale rápido, pero todavía se puede fintar (chamber feint) o convertir (chamber morph)
+		d.isRiposte = false
+		d.chambered = true
+		startPhase(d, "windup", c.ChamberCounterWindup)
+		FxEvent:FireAllClients("chamber", hitPos, d.player.Name, a.player.Name)
 		return
 	end
 	local zone = zoneOf(hitPart.Name)
@@ -489,7 +493,7 @@ local function sweep(f, dt)
 			if dist < 0.7 then
 				bounce(f)
 				bounce(other)
-				FxEvent:FireAllClients("weaponclash", point)
+				FxEvent:FireAllClients("weaponclash", point, f.player.Name, other.player.Name)
 				return
 			end
 		end
@@ -643,15 +647,19 @@ local function handleAction(player, action, a1, a2)
 			startAttack(f, kind, angle)
 		elseif f.state == "riposte" then
 			startAttack(f, kind, angle, c.RiposteWindupScale, { riposte = true })
-		elseif f.state == "attack" and f.phase == "windup" and (kind ~= f.kind or Swing.AngleDiff(angle, f.angle) > 25) then
-			-- morph: cambiar el golpe manteniendo el tiempo de carga
+		elseif f.state == "attack" and f.phase == "windup" and (kind ~= f.kind or Swing.AngleDiff(angle, f.angle) > c.MorphAngle) then
+			-- morph: cambiar el golpe manteniendo lo que ya cargaste (también después de un chamber)
 			if f.phaseDur - elapsed > c.MorphLockout and f.stamina >= Config.Stamina.Morph then
 				spendStamina(f, Config.Stamina.Morph)
 				local frac = math.clamp(elapsed / f.phaseDur, 0, 1)
+				local label = f.chambered and "CHAMBER MORPH" or "MORPH"
 				f.kind, f.angle = kind, angle
-				f.phaseDur = attackData(f).Windup
+				f.phaseDur = f.chambered and c.ChamberCounterWindup or attackData(f).Windup
 				f.phaseStart = t - frac * f.phaseDur
+				f.morphed = true
 				setAttr(f)
+				f.char:SetAttribute("MorphAt", t)
+				FxEvent:FireAllClients("tech", f.char.HumanoidRootPart.Position, f.player.Name, label)
 			end
 		elseif f.state == "attack" and f.phase == "release" then
 			-- clic durante el impacto: queda guardado y encadena al terminar
@@ -663,8 +671,9 @@ local function handleAction(player, action, a1, a2)
 		if f.state == "attack" and f.phase == "windup" and not f.isRiposte and f.phaseDur - elapsed > c.FeintLockout
 			and f.stamina >= Config.Stamina.Feint then
 			spendStamina(f, Config.Stamina.Feint)
+			local label = f.chambered and "CHAMBER FEINT" or f.morphed and "MORPH FEINT" or "FINTA"
 			toIdle(f)
-			FxEvent:FireAllClients("feint", f.char.HumanoidRootPart.Position)
+			FxEvent:FireAllClients("feint", f.char.HumanoidRootPart.Position, f.player.Name, label)
 		end
 	elseif action == "parry" then
 		local shield = f.weapon.Kind == "shield"
@@ -674,6 +683,7 @@ local function handleAction(player, action, a1, a2)
 				return
 			end
 			spendStamina(f, Config.Stamina.Feint) -- fintar para parar
+			FxEvent:FireAllClients("tech", f.char.HumanoidRootPart.Position, f.player.Name, f.chambered and "CHAMBER FEINT" or "FEINT-TO-PARRY")
 		end
 		if f.state == "idle" or f.state == "riposte" or feintable or (f.state == "attack" and f.phase == "recovery") then
 			if shield then

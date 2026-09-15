@@ -109,6 +109,7 @@ corner(3, cross)
 local arrow = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 4, 0, 16),
 	BackgroundColor3 = GOLD, Parent = gui })
 corner(2, arrow)
+local toast = { text = "", untilT = 0 }
 local stateText = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 30), Size = UDim2.new(0, 300, 0, 26),
 	Text = "", TextColor3 = GOLD, MaxSize = 22, Parent = gui })
 
@@ -383,7 +384,15 @@ local function smoothWeapon(sm, body, base, dir, st, dt, length, edge)
 		sm.base, sm.dir, sm.edge = localBase, localDir, localEdge
 	else
 		local k = 1 - math.exp(-dt * 12)
-		if st.State == "attack" and st.Phase == "windup" then
+		local morphKey = st.State == "attack" and st.Phase == "windup" and (st.Kind .. ":" .. math.floor(st.Angle)) or nil
+		if morphKey and sm.morphKey and morphKey ~= sm.morphKey then
+			sm.morphLeft = 0.16
+		end
+		sm.morphKey = morphKey
+		if sm.morphLeft and sm.morphLeft > 0 then
+			sm.morphLeft -= dt
+			k = 1 - math.exp(-dt * 16) -- transición visible del morph
+		elseif st.State == "attack" and st.Phase == "windup" then
 			-- combos: la carga nace desde donde terminó el golpe anterior y llega exacta al impacto
 			local tt = math.clamp(st.T or 0, 0, 1)
 			k = k + (1 - k) * tt * tt * tt
@@ -619,6 +628,13 @@ end
 ---------------------------------------------------------------------------
 -- Efectos
 ---------------------------------------------------------------------------
+local function showTech(text, actor, other)
+	if actor == player.Name or other == player.Name then
+		toast.text = (actor == player.Name) and text or (text .. " RIVAL")
+		toast.untilT = os.clock() + 0.9
+	end
+end
+
 local function pick(list)
 	return list[math.random(#list)]
 end
@@ -677,13 +693,17 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 		if math.random() < 0.5 then
 			sound(pick(SOUNDS.pain), a, 0.5)
 		end
+	elseif kind == "tech" then
+		showTech(c, b, nil)
 	elseif kind == "parry" or kind == "chamber" then
+		showTech(kind == "chamber" and "CHAMBER" or "PARRY", b, nil)
 		bigClash(a, Color3.fromRGB(255, 200, 90))
 		sound(pick(SOUNDS.parry), a, 1.2)
 		if kind == "chamber" then
 			sound(pick(SOUNDS.clash), a, 1)
 		end
 	elseif kind == "weaponclash" then
+		showTech("CLASH", b, c)
 		bigClash(a, Color3.fromRGB(255, 230, 150))
 		sound(pick(SOUNDS.parry), a, 1.3)
 		sound(pick(SOUNDS.clash), a, 1.1)
@@ -698,6 +718,7 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 	elseif kind == "combo" then
 		sound(pick(SOUNDS.swing), a, 0.4)
 	elseif kind == "feint" then
+		showTech(c or "FINTA", b, nil)
 		sound(pick(SOUNDS.feint), a, 0.5)
 	elseif kind == "death" then
 		sound(pick(SOUNDS.death), a, 1)
@@ -802,6 +823,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local hum = char and char:FindFirstChildOfClass("Humanoid")
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
 	UserInputService.MouseBehavior = loadout.Visible and Enum.MouseBehavior.Default or Enum.MouseBehavior.LockCenter
+	UserInputService.MouseIconEnabled = loadout.Visible -- el puntero solo aparece para elegir arma
 
 	-- tercera persona: el cuerpo mira hacia donde apunta la cámara
 	if hrp and hum and not firstPerson and hum.Health > 0 then
@@ -901,7 +923,7 @@ RunService.RenderStepped:Connect(function(dt)
 	arrow.Rotation = angle
 	local st = char and char:GetAttribute("St") or ""
 	local combo = char and char:GetAttribute("Combo") or 0
-	stateText.Text = combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
+	stateText.Text = os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
 	loadout.Visible = dead
