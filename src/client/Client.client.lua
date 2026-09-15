@@ -551,9 +551,10 @@ local function predictAttack(kind, angle)
 	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "longsword")
 	local phase = char:GetAttribute("Phase")
 	local comboable = st == "attack" and phase == "recovery" and (char:GetAttribute("Stamina") or 0) >= Config.Stamina.ComboMin
-	if st == "idle" or st == "riposte" or comboable then
+	local shieldRiposte = st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0)
+	if st == "idle" or st == "riposte" or comboable or shieldRiposte then
 		local data = kind == "stab" and weapon.Stab or weapon.Slash
-		local scale = st == "riposte" and Config.Combat.RiposteWindupScale or (comboable and Config.Combat.ComboWindupScale or 1)
+		local scale = (st == "riposte" or shieldRiposte) and Config.Combat.RiposteWindupScale or (comboable and Config.Combat.ComboWindupScale or 1)
 		predicted = { State = "attack", Kind = kind, Angle = angle, Phase = "windup", PhaseStart = serverNow(), PhaseDur = data.Windup * scale, at = os.clock() }
 	end
 end
@@ -935,7 +936,8 @@ RunService.RenderStepped:Connect(function(dt)
 	arrow.Rotation = angle
 	local st = char and char:GetAttribute("St") or ""
 	local combo = char and char:GetAttribute("Combo") or 0
-	stateText.Text = os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
+	local riposteOpen = st == "riposte" or (st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0))
+	stateText.Text = riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
 	loadout.Visible = dead

@@ -411,6 +411,9 @@ local function resolveHit(a, d, hitPart, hitPos)
 		spendStamina(d, drain)
 		if d.state == "parry" then
 			setState(d, "riposte", c.RiposteWindow)
+		else
+			d.riposteUntil = now() + c.RiposteWindow -- con escudo también se puede ripostear sin soltar el bloqueo
+			d.char:SetAttribute("RiposteUntil", d.riposteUntil)
 		end
 		setAttr(d)
 		return
@@ -645,8 +648,10 @@ local function handleAction(player, action, a1, a2)
 		local angle = type(a2) == "number" and math.clamp(a2, -180, 180) or 45
 		if f.state == "idle" or f.state == "parryrec" then
 			startAttack(f, kind, angle)
-		elseif f.state == "riposte" then
+		elseif f.state == "riposte" or (f.state == "block" and t <= (f.riposteUntil or 0)) then
+			f.riposteUntil = 0
 			startAttack(f, kind, angle, c.RiposteWindupScale, { riposte = true })
+			FxEvent:FireAllClients("tech", f.char.HumanoidRootPart.Position, f.player.Name, "RIPOSTE")
 		elseif f.state == "attack" and f.phase == "windup" and (kind ~= f.kind or Swing.AngleDiff(angle, f.angle) > c.MorphAngle) then
 			-- morph: cambiar el golpe manteniendo lo que ya cargaste (también después de un chamber)
 			if f.phaseDur - elapsed > c.MorphLockout and f.stamina >= Config.Stamina.Morph then
