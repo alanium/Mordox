@@ -887,7 +887,7 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 		local pitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
 		local st = poseState(readState(char), k.weaponDef, serverNow())
 		local base, tip, dir, edge = Swing.WorldPose(body, pitch, k.weaponDef, st)
-		k.debugBase, k.debugTip = base, tip -- la línea de F3 muestra la hoja real, sin suavizar
+		k.debugBase, k.debugTip, k.debugBody, k.debugSt = base, tip, body, st -- la línea de F3 muestra la hoja real, sin suavizar
 		k.smView = k.smView or {}
 		base, tip, dir, edge = smoothWeapon(k.smView, body, base, dir, st, dt, k.weaponDef.Length, edge)
 		placeParts(k.weapon.parts, CFrame.lookAt(base, base + dir, edge))
@@ -978,8 +978,27 @@ RunService.RenderStepped:Connect(function(dt)
 			local len = (k.debugTip - k.debugBase).Magnitude
 			debugParts.blade.Size = Vector3.new(0.05, 0.05, len)
 			debugParts.blade.CFrame = CFrame.lookAt((k.debugBase + k.debugTip) / 2, k.debugTip)
+			-- rastro de la punta coloreado según drag/accel: velocidad real de la punta contra la que tendría sin mover la cámara
+			local tipLocal = k.debugBody:PointToObjectSpace(k.debugTip)
+			local trailColor = Color3.fromRGB(230, 230, 230)
+			if k.lastTip and k.lastTipLocal and k.debugSt and k.debugSt.State == "attack" and k.debugSt.Phase == "release" then
+				local expected = (tipLocal - k.lastTipLocal).Magnitude
+				local actual = (k.debugTip - k.lastTip).Magnitude
+				local ratio = expected > 1e-3 and actual / expected or 1
+				k.tipRatio = (k.tipRatio or 1) + (ratio - (k.tipRatio or 1)) * 0.3
+				if k.tipRatio > 1.12 then
+					local x = math.clamp((k.tipRatio - 1.12) / 0.8, 0, 1)
+					trailColor = Color3.fromRGB(255, 200 - 170 * x, 40) -- accel: amarillo a rojo
+				elseif k.tipRatio < 0.88 then
+					local x = math.clamp((0.88 - k.tipRatio) / 0.6, 0, 1)
+					trailColor = Color3.fromRGB(120 - 100 * x, 200 - 80 * x, 255) -- drag: celeste a azul
+				else
+					trailColor = Color3.fromRGB(120, 255, 140) -- sin mover la cámara
+				end
+			end
+			k.lastTipLocal = tipLocal
 			if k.lastTip and (k.lastTip - k.debugTip).Magnitude > 0.05 then
-				local seg = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon, Color = Color3.fromRGB(80, 200, 255),
+				local seg = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Material = Enum.Material.Neon, Color = trailColor,
 					Transparency = 0.3, Size = Vector3.new(0.04, 0.04, (k.lastTip - k.debugTip).Magnitude),
 					CFrame = CFrame.lookAt((k.lastTip + k.debugTip) / 2, k.debugTip), Parent = workspace })
 				Debris:AddItem(seg, 1.2)
@@ -987,10 +1006,11 @@ RunService.RenderStepped:Connect(function(dt)
 			k.lastTip = k.debugTip
 		end
 		local st2 = k and k.st
-		debugText.Text = string.format("MODO DESARROLLADOR\nestado  %s %s  T=%.2f\nángulo  %d   tipo %s\nstamina %s\nping    %d ms\ngiro    %.0f°/s (tope %d)\nsens.   %.2f\nFOV     %d\nverde = hoja local · roja = servidor\namarillo = impacto en jugador · celeste = pared",
+		debugText.Text = string.format("MODO DESARROLLADOR\nestado  %s %s  T=%.2f\nángulo  %d   tipo %s\nstamina %s\nping    %d ms\ngiro    %.0f°/s (tope %d)\nsens.   %.2f\nFOV     %d\nhoja: verde local · roja servidor\nrastro: verde normal · amarillo/rojo ACCEL · celeste/azul DRAG\nvelocidad punta x%.2f  %s",
 			st2 and st2.State or "-", st2 and st2.Phase or "", st2 and st2.T or 0, st2 and st2.Angle or 0, st2 and st2.Kind or "",
 			tostring(char:GetAttribute("Stamina")), math.floor(player:GetNetworkPing() * 1000),
-			turn.rate, Config.Combat.TurnCap, turn.sens, fov)
+			turn.rate, Config.Combat.TurnCap, turn.sens, fov, k and k.tipRatio or 1,
+			not (k and k.tipRatio) and "" or k.tipRatio > 1.12 and "ACCEL" or k.tipRatio < 0.88 and "DRAG" or "")
 	elseif not debugOn then
 		for _, p in ipairs(Players:GetPlayers()) do
 			local c3 = p.Character
