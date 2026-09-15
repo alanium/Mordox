@@ -702,10 +702,29 @@ local function sparks(pos, color, count)
 	Debris:AddItem(p, 1)
 end
 
-FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
+-- número de daño flotante
+local function damageNumber(pos, amount, color)
+	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
+	local g = new("BillboardGui", { Size = UDim2.new(0, 90, 0, 40), AlwaysOnTop = true, Parent = p })
+	local l = label({ Size = UDim2.fromScale(1, 1), Text = tostring(math.floor(amount + 0.5)), TextColor3 = color, MaxSize = 30, TextStrokeTransparency = 0.2, Parent = g })
+	task.spawn(function()
+		for i = 1, 30 do
+			p.CFrame = p.CFrame + Vector3.new(0, 0.06, 0)
+			l.TextTransparency = i / 30
+			l.TextStrokeTransparency = 0.2 + 0.8 * i / 30
+			task.wait(1 / 60)
+		end
+		p:Destroy()
+	end)
+end
+
+FxEvent.OnClientEvent:Connect(function(kind, a, b, c, d)
 	if kind == "hit" then
 		sparks(a, Color3.fromRGB(170, 20, 20), 22)
-		sound(pick(c == "blunt" and SOUNDS.blunt or SOUNDS.cut), a, 1)
+		sound(pick(d == "blunt" and SOUNDS.blunt or SOUNDS.cut), a, 1)
+		damageNumber(a, c or 0, b == "head" and Color3.fromRGB(255, 200, 60) or Color3.new(1, 1, 1))
+	elseif kind == "dummyreset" then
+		showTech("¡DUMMY DERROTADO!", b, nil)
 	elseif kind == "tech" then
 		showTech(c, b, nil)
 	elseif kind == "parry" or kind == "chamber" then

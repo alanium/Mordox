@@ -369,9 +369,23 @@ local function applyDamage(attacker, defender, amount, zone, hitPos)
 	if not hum or hum.Health <= 0 then
 		return
 	end
-	hum:TakeDamage(amount)
 	defender.lastHitBy = attacker
 	FxEvent:FireAllClients("hit", hitPos, zone, amount, attacker.weapon.Slash.Type)
+	if attacker.isBot and not Config.Match.BotsDealDamage then
+		amount = 0 -- práctica: el dummy no saca vida
+	end
+	if defender.isBot and Config.Match.BotsImmortal then
+		-- práctica: la vida del dummy es solo visual y se recarga al llegar a 0
+		local left = hum.Health - amount
+		if left <= 0 then
+			hum.Health = hum.MaxHealth
+			FxEvent:FireAllClients("dummyreset", hitPos, attacker.player.Name)
+		else
+			hum.Health = left
+		end
+	elseif amount > 0 then
+		hum:TakeDamage(amount)
+	end
 	if hum.Health <= 0 then
 		killed(defender, attacker, attacker.weapon.Name)
 		return
@@ -975,6 +989,40 @@ for i = 1, Config.Match.Bots or 0 do
 		char.Parent = botFolder
 		task.spawn(function()
 			onCharacter(botPlayer, char)
+			-- barra de vida sobre la cabeza del dummy
+			local head = char:FindFirstChild("Head")
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if head and hum then
+				hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+				local gui = Instance.new("BillboardGui")
+				gui.Name = "DummyBar"
+				gui.Size = UDim2.new(4, 0, 0.9, 0)
+				gui.StudsOffset = Vector3.new(0, 2.4, 0)
+				gui.AlwaysOnTop = true
+				gui.Parent = head
+				local name = Instance.new("TextLabel")
+				name.Size = UDim2.new(1, 0, 0.5, 0)
+				name.BackgroundTransparency = 1
+				name.Text = "DUMMY"
+				name.Font = Enum.Font.GothamBlack
+				name.TextScaled = true
+				name.TextColor3 = Color3.new(1, 1, 1)
+				name.TextStrokeTransparency = 0.3
+				name.Parent = gui
+				local back = Instance.new("Frame")
+				back.Position = UDim2.new(0, 0, 0.6, 0)
+				back.Size = UDim2.new(1, 0, 0.35, 0)
+				back.BackgroundColor3 = Color3.fromRGB(25, 20, 20)
+				back.Parent = gui
+				local fill = Instance.new("Frame")
+				fill.Size = UDim2.fromScale(1, 1)
+				fill.BackgroundColor3 = Color3.fromRGB(200, 45, 40)
+				fill.BorderSizePixel = 0
+				fill.Parent = back
+				hum.HealthChanged:Connect(function(hp)
+					fill.Size = UDim2.fromScale(math.clamp(hp / hum.MaxHealth, 0, 1), 1)
+				end)
+			end
 			if not Config.Match.BotsMove then
 				char:PivotTo(CFrame.lookAt(Vector3.new(8 * i, 3.5, 30), Vector3.new(8 * i, 3.5, 60)))
 			end

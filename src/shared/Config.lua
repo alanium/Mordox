@@ -10,6 +10,8 @@ Config.Match = {
 	RespawnTime = 4,
 	IntermissionTime = 12,
 	Bots = 1, -- caballeros de práctica controlados por el servidor (0 = ninguno)
+	BotsDealDamage = false, -- el dummy pega (stun, chispas) pero no te saca vida
+	BotsImmortal = true, -- al dummy le baja la vida, pero al llegar a 0 se recarga en vez de morir
 	BotsMove = false, -- false = el dummy se queda quieto en su lugar, pero pega, para y ripostea
 }
 
