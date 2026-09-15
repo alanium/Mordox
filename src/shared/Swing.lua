@@ -146,16 +146,42 @@ rawPose = function(weapon, st)
 	return guardHands, guard
 end
 
+-- Hacia dónde mira el filo (local): en un corte, el filo va adelante en el sentido del movimiento de la hoja
+function Swing.EdgeDir(st, dir)
+	local edge
+	if st.State == "attack" and st.Kind == "slash" then
+		local side = Vector3.new(math.sin(rad(st.Angle)), math.cos(rad(st.Angle)), 0)
+		local normal = side:Cross(FORWARD)
+		edge = normal:Cross(dir)
+		if st.Phase == "recovery" then
+			edge = edge:Lerp(FORWARD, math.clamp(st.T or 0, 0, 1))
+		end
+	elseif st.State == "attack" and st.Kind == "stab" then
+		edge = Vector3.yAxis
+	elseif st.State == "parry" or st.State == "riposte" then
+		edge = FORWARD -- filo hacia el golpe que viene
+	else
+		edge = Vector3.new(0, 0.3, -1)
+	end
+	edge = edge - dir * edge:Dot(dir)
+	if edge.Magnitude < 1e-3 then
+		edge = Vector3.yAxis - dir * dir.Y
+	end
+	return edge.Unit
+end
+
 -- Aplica el giro de mirada (pitch) y lleva la pose al mundo
 function Swing.WorldPose(rootCF, pitch, weapon, st)
 	local hands, dir = Swing.LocalPose(weapon, st)
+	local edge = Swing.EdgeDir(st, dir)
 	local tilt = CFrame.Angles(rad(math.clamp(pitch or 0, -60, 60) * 0.7), 0, 0)
 	local rel = hands - PIVOT
 	hands = Swing.ClearBody(PIVOT + tilt:VectorToWorldSpace(rel)) -- mirar arriba o abajo tampoco mete las manos en el cuerpo
 	dir = tilt:VectorToWorldSpace(dir)
+	edge = tilt:VectorToWorldSpace(edge)
 	local base = rootCF:PointToWorldSpace(hands)
 	local wdir = rootCF:VectorToWorldSpace(dir)
-	return base, base + wdir * weapon.Length, wdir
+	return base, base + wdir * weapon.Length, wdir, rootCF:VectorToWorldSpace(edge)
 end
 
 -- Puntos a lo largo de la hoja (de la empuñadura a la punta) para barrer impactos

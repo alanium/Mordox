@@ -298,7 +298,7 @@ end
 ---------------------------------------------------------------------------
 -- Animación de caballeros (brazos por IK hacia la empuñadura, piernas al caminar)
 ---------------------------------------------------------------------------
-local knights = setmetatable({}, { __mode = "k" }) -- [character] = datos
+local knights = {} -- [character] = datos (claves fuertes: al desaparecer el personaje se borra su arma)
 
 local function solveIK(root, target, a, b, pole)
 	local d = target - root
@@ -376,10 +376,11 @@ end
 
 -- suaviza la pose del arma en el espacio del cuerpo: una finta o un cambio brusco de estado vuelve a la guardia sin salto.
 -- Durante el impacto no se suaviza, para que lo que se ve sea exactamente lo que pega.
-local function smoothWeapon(sm, body, base, dir, st, dt, length)
+local function smoothWeapon(sm, body, base, dir, st, dt, length, edge)
 	local localBase, localDir = body:PointToObjectSpace(base), body:VectorToObjectSpace(dir)
+	local localEdge = body:VectorToObjectSpace(edge or body.UpVector)
 	if not sm.base or (st.State == "attack" and st.Phase == "release") then
-		sm.base, sm.dir = localBase, localDir
+		sm.base, sm.dir, sm.edge = localBase, localDir, localEdge
 	else
 		local k = 1 - math.exp(-dt * 12)
 		if st.State == "attack" and st.Phase == "windup" then
@@ -390,9 +391,11 @@ local function smoothWeapon(sm, body, base, dir, st, dt, length)
 		sm.base = sm.base:Lerp(localBase, k)
 		local d = sm.dir:Lerp(localDir, k)
 		sm.dir = d.Magnitude > 1e-3 and d.Unit or localDir
+		local e = (sm.edge or localEdge):Lerp(localEdge, k)
+		sm.edge = e.Magnitude > 1e-3 and e.Unit or localEdge
 	end
 	local b, d = body:PointToWorldSpace(sm.base), body:VectorToWorldSpace(sm.dir)
-	return b, b + d * length, d
+	return b, b + d * length, d, body:VectorToWorldSpace(sm.edge)
 end
 
 local function animateKnight(char, t, dt)
@@ -416,9 +419,9 @@ local function animateKnight(char, t, dt)
 		local look = camera.CFrame.LookVector
 		body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
 	end
-	local base, tip, dir = Swing.WorldPose(body, pitch, weapon, st)
+	local base, tip, dir, edge = Swing.WorldPose(body, pitch, weapon, st)
 	k.smAnim = k.smAnim or {}
-	base, tip, dir = smoothWeapon(k.smAnim, body, base, dir, st, dt, weapon.Length)
+	base, tip, dir, edge = smoothWeapon(k.smAnim, body, base, dir, st, dt, weapon.Length, edge)
 	-- sonido de la hoja cortando el aire al empezar cada golpe (para todos los caballeros)
 	local key = st.State .. st.Phase .. tostring(char:GetAttribute("PhaseStart"))
 	if key ~= k.soundKey then
@@ -442,7 +445,7 @@ local function animateKnight(char, t, dt)
 		return body:PointToWorldSpace(Swing.ClearBody(body:PointToObjectSpace(p)))
 	end
 	aimLimb(k.rArm, base, elbowPole(base, 1))
-	local gripCF = CFrame.lookAt(base, base + dir, body.UpVector)
+	local gripCF = CFrame.lookAt(base, base + dir, edge) -- el ancho de la hoja sigue al filo: corta con el filo, no de plano
 	if weapon.Kind == "twohand" then
 		local leftHand = clearWorld(base - dir * 0.55)
 		aimLimb(k.lArm, leftHand, elbowPole(leftHand, -1))
@@ -772,11 +775,11 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 		local body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
 		local pitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
 		local st = poseState(readState(char), k.weaponDef, serverNow())
-		local base, tip, dir = Swing.WorldPose(body, pitch, k.weaponDef, st)
+		local base, tip, dir, edge = Swing.WorldPose(body, pitch, k.weaponDef, st)
 		k.debugBase, k.debugTip = base, tip -- la línea de F3 muestra la hoja real, sin suavizar
 		k.smView = k.smView or {}
-		base, tip, dir = smoothWeapon(k.smView, body, base, dir, st, dt, k.weaponDef.Length)
-		placeParts(k.weapon.parts, CFrame.lookAt(base, base + dir, body.UpVector))
+		base, tip, dir, edge = smoothWeapon(k.smView, body, base, dir, st, dt, k.weaponDef.Length, edge)
+		placeParts(k.weapon.parts, CFrame.lookAt(base, base + dir, edge))
 		-- tope de giro durante carga y golpe: baja la sensibilidad si girás más rápido que el límite
 		local yaw = math.atan2(-look.X, -look.Z)
 		local attacking = st.State == "attack" and st.Phase ~= "recovery"

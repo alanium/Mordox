@@ -10,6 +10,7 @@ Config.Match = {
 	RespawnTime = 4,
 	IntermissionTime = 12,
 	Bots = 1, -- caballeros de práctica controlados por el servidor (0 = ninguno)
+	BotsMove = false, -- false = el dummy se queda quieto en su lugar, pero pega, para y ripostea
 }
 
 Config.MaxHealth = 100

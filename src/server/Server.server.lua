@@ -880,7 +880,16 @@ local function botThink(f)
 	local flat = (thrp.Position - hrp.Position) * Vector3.new(1, 0, 1)
 	local dir = flat.Magnitude > 0.1 and flat.Unit or hrp.CFrame.LookVector
 	-- moverse hasta quedar a distancia de espada y mirar al rival
-	if dist > 5.2 then
+	if not Config.Match.BotsMove then
+		-- dummy quieto: solo gira hacia el rival cercano
+		f.hum.AutoRotate = false
+		f.hum:Move(Vector3.zero)
+		if dist < 14 then
+			local yaw = math.atan2(-dir.X, -dir.Z)
+			hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+			f.yaw, f.lookAt = yaw, t
+		end
+	elseif dist > 5.2 then
 		f.hum.AutoRotate = true
 		botWalk(f, hrp, thrp.Position - dir * 4)
 	else
@@ -949,7 +958,12 @@ for i = 1, Config.Match.Bots or 0 do
 		local char = StarterPlayer.StarterCharacter:Clone()
 		char.Name = botPlayer.Name
 		char.Parent = botFolder
-		task.spawn(onCharacter, botPlayer, char)
+		task.spawn(function()
+			onCharacter(botPlayer, char)
+			if not Config.Match.BotsMove then
+				char:PivotTo(CFrame.lookAt(Vector3.new(8 * i, 3.5, 30), Vector3.new(8 * i, 3.5, 60)))
+			end
+		end)
 		task.defer(function()
 			local hrp = char:FindFirstChild("HumanoidRootPart")
 			if hrp and hrp:IsDescendantOf(workspace) then
