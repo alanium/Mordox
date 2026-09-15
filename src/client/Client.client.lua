@@ -46,7 +46,6 @@ local SOUNDS = {
 	kick = { "rbxassetid://9120487736" },
 	clash = { "rbxassetid://9116764832" },
 	death = { "rbxassetid://9113475819" },
-	pain = { "rbxassetid://9114030538" },
 	disarm = { "rbxassetid://9114007026" },
 	feint = { "rbxassetid://9119711209" },
 }
@@ -386,12 +385,28 @@ local function smoothWeapon(sm, body, base, dir, st, dt, length, edge)
 		local k = 1 - math.exp(-dt * 12)
 		local morphKey = st.State == "attack" and st.Phase == "windup" and (st.Kind .. ":" .. math.floor(st.Angle)) or nil
 		if morphKey and sm.morphKey and morphKey ~= sm.morphKey then
-			sm.morphLeft = 0.16
+			-- morph: la hoja se recoge hacia el pecho y sale hacia la carga del golpe nuevo
+			local tt = math.clamp(st.T or 0, 0, 1)
+			sm.morph = { t = 0, dur = math.clamp((1 - tt) * 0.55, 0.12, 0.3), base = sm.base, dir = sm.dir, edge = sm.edge or localEdge }
 		end
 		sm.morphKey = morphKey
-		if sm.morphLeft and sm.morphLeft > 0 then
-			sm.morphLeft -= dt
-			k = 1 - math.exp(-dt * 16) -- transición visible del morph
+		local mo = sm.morph
+		if mo and morphKey then
+			mo.t += dt
+			local e = math.clamp(mo.t / mo.dur, 0, 1)
+			local ease = e * e * (3 - 2 * e)
+			local arc = math.sin(math.pi * e)
+			local chest = Vector3.new(0, 1.1, -0.6)
+			sm.base = mo.base:Lerp(localBase, ease):Lerp(chest, arc * 0.45)
+			local d = mo.dir:Lerp(localDir, ease) + Vector3.new(0, arc * 0.6, 0)
+			sm.dir = d.Magnitude > 1e-3 and d.Unit or localDir
+			local ed = mo.edge:Lerp(localEdge, ease)
+			sm.edge = ed.Magnitude > 1e-3 and ed.Unit or localEdge
+			if e >= 1 then
+				sm.morph = nil
+			end
+			local b, dd = body:PointToWorldSpace(sm.base), body:VectorToWorldSpace(sm.dir)
+			return b, b + dd * length, dd, body:VectorToWorldSpace(sm.edge)
 		elseif st.State == "attack" and st.Phase == "windup" then
 			-- combos: la carga nace desde donde terminó el golpe anterior y llega exacta al impacto
 			local tt = math.clamp(st.T or 0, 0, 1)
@@ -690,9 +705,6 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c)
 	if kind == "hit" then
 		sparks(a, Color3.fromRGB(170, 20, 20), 22)
 		sound(pick(c == "blunt" and SOUNDS.blunt or SOUNDS.cut), a, 1)
-		if math.random() < 0.5 then
-			sound(pick(SOUNDS.pain), a, 0.5)
-		end
 	elseif kind == "tech" then
 		showTech(c, b, nil)
 	elseif kind == "parry" or kind == "chamber" then
