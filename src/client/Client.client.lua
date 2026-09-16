@@ -322,8 +322,9 @@ local function refreshPreview(sty)
 			preview.weapon.model:Destroy()
 		end
 		preview.weapon = buildWeapon(weapon, sty, swordWorld)
-		local h = weapon.Length + weapon.Grip + 0.6
-		swordView.dist = h / (2 * math.tan(math.rad(16)))
+		local total = weapon.Length + weapon.Grip + 0.6 -- del pomo a la punta
+		swordView.dist = total / (2 * math.tan(math.rad(16)))
+		swordView.offset = (weapon.Grip + 0.25 - weapon.Length) / 2 -- centro del arma en el eje de la hoja
 	end
 	local kkey = table.concat({ sty.Helmet, sty.Armor, sty.Tabard }, "|")
 	ensureKnightPreview()
@@ -1398,13 +1399,14 @@ RunService.RenderStepped:Connect(function(dt)
 		refreshPreview(sty)
 		if preview.weapon then
 			local turn = CFrame.Angles(0, swordView.yaw, 0) * CFrame.Angles(swordView.pitch, 0, 0)
-			placeParts(preview.weapon.parts, turn * CFrame.new(0, -2.1, 0) * CFrame.Angles(math.rad(90), 0, 0))
+			placeParts(preview.weapon.parts, turn * CFrame.new(0, swordView.offset or 0, 0) * CFrame.Angles(math.rad(90), 0, 0))
 			swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, swordView.dist * swordView.zoom), Vector3.new())
 		end
 		if preview.knight then
 			local c = knightView.center or Vector3.new()
-			preview.knight:PivotTo(CFrame.Angles(0, knightView.yaw, 0) * CFrame.Angles(knightView.pitch * 0.35, 0, 0))
-			knightCam.CFrame = CFrame.lookAt(c + Vector3.new(0, 0, knightView.dist * knightView.zoom), c)
+			local turn = CFrame.Angles(0, knightView.yaw, 0) * CFrame.Angles(knightView.pitch * 0.35, 0, 0)
+			preview.knight:PivotTo(turn * CFrame.new(-c)) -- el centro del cuerpo queda en el eje de giro
+			knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, knightView.dist * knightView.zoom), Vector3.new())
 		end
 		local wait = (char and char:GetAttribute("CanSpawnAt") or 0) - serverNow()
 		local ready = not dead or wait <= 0
