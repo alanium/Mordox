@@ -658,6 +658,24 @@ local function handleAction(player, action, a1, a2)
 		end
 		return
 	end
+	if action == "armory" then
+		-- abrir la armería al morir congela la reaparición hasta que pida salir
+		if f then
+			if a1 then
+				f.wantSpawn = false -- está eligiendo equipo: no lo saques al campo todavía
+			else
+				f.wantSpawn = nil
+			end
+		end
+		return
+	end
+	if action == "spawn" then
+		if f and f.dead and now() >= (f.canSpawnAt or 0) then
+			f.wantSpawn = nil
+			spawnPlayer(player)
+		end
+		return
+	end
 	if action == "style" then
 		-- personalización: solo estética, se valida contra la lista y se guarda
 		if type(a1) == "string" and type(a2) == "string" and Config.DefaultStyle[a1] then
@@ -933,8 +951,11 @@ local function onCharacter(player, char)
 		if not f.dead then
 			killed(f, f.lastHitBy, f.lastHitBy and f.lastHitBy.weapon.Name)
 		end
+		f.canSpawnAt = now() + Config.Match.RespawnTime
+		char:SetAttribute("CanSpawnAt", f.canSpawnAt)
 		task.delay(Config.Match.RespawnTime, function()
-			if player.Parent and f.char == char then
+			-- en la armería: si pidió salir al campo, aparece; si no, espera ahí
+			if player.Parent and f.char == char and f.wantSpawn ~= false then
 				spawnPlayer(player)
 			end
 		end)

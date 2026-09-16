@@ -6,6 +6,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local StarterPlayer = game:GetService("StarterPlayer")
 local StarterGui = game:GetService("StarterGui")
 local Debris = game:GetService("Debris")
 
@@ -112,7 +113,9 @@ corner(3, cross)
 local arrow = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 4, 0, 16),
 	BackgroundColor3 = GOLD, Parent = gui })
 corner(2, arrow)
-local opts = { fov = 90, volume = 0.8, sens = 1 } -- ajustes del menú (M)
+local opts = { fov = 90, volume = 0.8, sens = 1 } -- ajustes de la armería (M)
+local buildWeapon, placeParts -- se definen más abajo, la armería los usa para la vista previa
+local menuOpen, wasDead = false, false
 local toast = { text = "", untilT = 0 }
 local stateText = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 30), Size = UDim2.new(0, 300, 0, 26),
 	Text = "", TextColor3 = GOLD, MaxSize = 22, Parent = gui })
@@ -162,7 +165,7 @@ local function refreshBoard()
 	end
 end
 
--- menú: personalización del arma y del caballero + ajustes (M, o al morir)
+-- armería (estilo Mordhau): vista 3D del arma y del caballero + piezas y ajustes
 local function styleOf(char)
 	local p = char and Players:GetPlayerFromCharacter(char)
 	local sty = {}
@@ -172,25 +175,155 @@ local function styleOf(char)
 	return sty
 end
 
-local loadout = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 900, 0, 600),
-	BackgroundColor3 = Color3.fromRGB(18, 15, 13), BackgroundTransparency = 0.08, Visible = false, Parent = gui })
-corner(12, loadout)
-label({ Position = UDim2.new(0, 20, 0, 12), Size = UDim2.new(1, -40, 0, 34), Text = "FORJA Y AJUSTES", TextColor3 = GOLD, MaxSize = 26,
+local loadout = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.fromRGB(14, 12, 11), BackgroundTransparency = 0.02,
+	Visible = false, Parent = gui })
+label({ Position = UDim2.new(0, 34, 0, 20), Size = UDim2.new(0, 500, 0, 40), Text = "ARMERÍA", TextColor3 = GOLD, MaxSize = 34,
 	TextXAlignment = Enum.TextXAlignment.Left, Parent = loadout })
-label({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -20, 0, 16), Size = UDim2.new(0, 360, 0, 26), Font = FONT2, MaxSize = 15,
-	TextColor3 = Color3.fromRGB(190, 180, 165), TextXAlignment = Enum.TextXAlignment.Right, Text = "M para abrir y cerrar", Parent = loadout })
-local menuList = new("Frame", { Position = UDim2.new(0, 20, 0, 54), Size = UDim2.new(1, -40, 1, -70), BackgroundTransparency = 1, Parent = loadout })
-new("UIListLayout", { Padding = UDim.new(0, 6), Parent = menuList })
 
-local styleButtons = {} -- [key][id] = botón
+-- vista 3D: arma a la izquierda, caballero al lado
+local function viewport(pos, size, fieldOfView)
+	local vp = new("ViewportFrame", { Position = pos, Size = size, BackgroundColor3 = Color3.fromRGB(22, 19, 17), BackgroundTransparency = 0.25,
+		Ambient = Color3.fromRGB(150, 145, 140), LightColor = Color3.fromRGB(255, 245, 225), LightDirection = Vector3.new(-0.4, -0.7, -0.6),
+		Parent = loadout })
+	corner(10, vp)
+	local world = Instance.new("WorldModel")
+	world.Parent = vp
+	local cam = Instance.new("Camera")
+	cam.FieldOfView = fieldOfView
+	cam.Parent = vp
+	vp.CurrentCamera = cam
+	return vp, world, cam
+end
+
+local swordVp, swordWorld, swordCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 420, 1, -160), 32)
+local knightVp, knightWorld, knightCam = viewport(UDim2.new(0, 474, 0, 80), UDim2.new(0, 300, 1, -160), 26)
+swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
+knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
+
+local preview = { weapon = nil, key = "", knight = nil, knightKey = "" }
+
+-- pinta un caballero de vista previa con los colores elegidos
+local function paintKnight(model, sty)
+	local armorOpt = Config.StyleOption("Armor", sty.Armor)
+	local tabardOpt = Config.StyleOption("Tabard", sty.Tabard)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			if d.Name == "Tabard" or d.Name == "TabardBack" then
+				d.Color = tabardOpt.Color
+			elseif d.Name == "Breastplate" or d.Name == "Pauldron" then
+				d.Color = armorOpt.Color
+			elseif d.Name == "Greave" then
+				d.Color = armorOpt.Dark
+			elseif d.Name == "Helmet" then
+				d.Color = sty.Helmet == "capucha" and Color3.fromRGB(70, 72, 78) or armorOpt.Color
+				d.Material = sty.Helmet == "capucha" and Enum.Material.DiamondPlate or Enum.Material.Metal
+				d.Transparency = sty.Helmet == "sin" and 1 or 0
+			elseif d.Name == "Visor" then
+				d.Transparency = (sty.Helmet == "sin" or sty.Helmet == "capucha") and 1 or 0
+			elseif d.Name == "Crest" then
+				d.Color = tabardOpt.Color
+				d.Transparency = sty.Helmet == "yelmo" and 0 or 1
+			end
+			d.Anchored = true
+		end
+	end
+end
+
+-- pone al clon en la pose de reposo del esqueleto (el original está peleando o caído)
+local function poseRig(model)
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then
+		return
+	end
+	local welds = {}
+	for _, w in ipairs(model:GetDescendants()) do
+		if w:IsA("WeldConstraint") and w.Part0 and w.Part1 then
+			table.insert(welds, { w.Part0, w.Part1, w.Part0.CFrame:Inverse() * w.Part1.CFrame })
+		end
+	end
+	root.CFrame = CFrame.new()
+	local done = { [root] = true }
+	for _ = 1, 8 do
+		for _, m in ipairs(model:GetDescendants()) do
+			if m:IsA("Motor6D") and m.Part0 and m.Part1 and done[m.Part0] and not done[m.Part1] then
+				m.Part1.CFrame = m.Part0.CFrame * m.C0 * m.C1:Inverse()
+				done[m.Part1] = true
+			end
+		end
+	end
+	for _, e in ipairs(welds) do
+		e[2].CFrame = e[1].CFrame * e[3] -- la armadura vuelve encima de su hueso
+	end
+end
+
+local function ensureKnightPreview()
+	local src = player.Character
+	local srcHum = src and src:FindFirstChildOfClass("Humanoid")
+	if src and preview.knightFrom ~= src and srcHum then
+		-- estatua del propio caballero para ver los cambios encima
+		if preview.knight then
+			preview.knight:Destroy()
+		end
+		src.Archivable = true
+		local clone = src:Clone()
+		for _, d in ipairs(clone:GetDescendants()) do
+			if d:IsA("Humanoid") or d:IsA("Script") or d:IsA("LocalScript") then
+				d:Destroy()
+			elseif d:IsA("BasePart") then
+				d.LocalTransparencyModifier = 0
+			end
+		end
+		poseRig(clone)
+		clone.PrimaryPart = clone:FindFirstChild("HumanoidRootPart") -- así queda derecho al girarlo
+		for _, d in ipairs(clone:GetDescendants()) do
+			if d:IsA("BasePart") then
+				d.Anchored = true
+			end
+		end
+		clone.Parent = knightWorld
+		clone:PivotTo(CFrame.new())
+		preview.knight, preview.knightFrom, preview.knightKey = clone, src, ""
+		local box, size = clone:GetBoundingBox()
+		local dist = size.Y * 0.75 / math.tan(math.rad(13))
+		local h = box.Position.Y -- centro real del caballero: así entra entero en el recuadro
+		knightCam.CFrame = CFrame.lookAt(Vector3.new(0, h, dist), Vector3.new(0, h, 0))
+	end
+end
+
+local function refreshPreview(sty)
+	local weapon = Config.Weapons[1]
+	local key = table.concat({ sty.Blade, sty.Guard, sty.Grip, sty.Pommel, sty.Metal }, "|")
+	if preview.key ~= key then
+		preview.key = key
+		if preview.weapon then
+			preview.weapon.model:Destroy()
+		end
+		preview.weapon = buildWeapon(weapon, sty, swordWorld)
+		local h = weapon.Length + weapon.Grip + 0.6
+		swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, h / (2 * math.tan(math.rad(16)))), Vector3.new())
+	end
+	local kkey = table.concat({ sty.Helmet, sty.Armor, sty.Tabard }, "|")
+	ensureKnightPreview()
+	if preview.knight and preview.knightKey ~= kkey then
+		preview.knightKey = kkey
+		paintKnight(preview.knight, sty)
+	end
+end
+
+-- columna derecha: piezas del arma, caballero y ajustes
+local menuList = new("ScrollingFrame", { Position = UDim2.new(0, 794, 0, 80), Size = UDim2.new(1, -828, 1, -160), BackgroundTransparency = 1,
+	ScrollBarThickness = 6, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Parent = loadout })
+new("UIListLayout", { Padding = UDim.new(0, 8), Parent = menuList })
+
+local styleButtons = {}
 
 local function menuRow(order, title)
-	local row = new("Frame", { Size = UDim2.new(1, 0, 0, 44), LayoutOrder = order, BackgroundColor3 = Color3.fromRGB(30, 25, 21),
-		BackgroundTransparency = 0.25, Parent = menuList })
+	local row = new("Frame", { Size = UDim2.new(1, -10, 0, 64), LayoutOrder = order, BackgroundColor3 = Color3.fromRGB(30, 25, 21),
+		BackgroundTransparency = 0.2, Parent = menuList })
 	corner(6, row)
-	label({ Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0, 210, 1, 0), Text = title, MaxSize = 18, Font = FONT2,
-		TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
-	local holder = new("Frame", { Position = UDim2.new(0, 230, 0, 6), Size = UDim2.new(1, -240, 1, -12), BackgroundTransparency = 1, Parent = row })
+	label({ Position = UDim2.new(0, 12, 0, 4), Size = UDim2.new(1, -20, 0, 20), Text = title, MaxSize = 16, Font = FONT2,
+		TextColor3 = Color3.fromRGB(215, 200, 175), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+	local holder = new("Frame", { Position = UDim2.new(0, 12, 0, 26), Size = UDim2.new(1, -24, 0, 32), BackgroundTransparency = 1, Parent = row })
 	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = holder })
 	return holder
 end
@@ -199,13 +332,11 @@ for i, cat in ipairs(Config.Custom) do
 	local holder = menuRow(i, cat.Name)
 	styleButtons[cat.Key] = {}
 	for j, opt in ipairs(cat.Options) do
-		local b = new("TextButton", { Size = UDim2.new(0, 148, 1, 0), LayoutOrder = j, Text = "", AutoButtonColor = true,
-			BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = holder })
+		local b = new("TextButton", { Size = UDim2.new(0, opt.Color and 44 or 108, 1, 0), LayoutOrder = j, Text = "", AutoButtonColor = true,
+			BackgroundColor3 = opt.Color or Color3.fromRGB(45, 37, 30), Parent = holder })
 		corner(5, b)
-		label({ Size = UDim2.fromScale(1, 1), Text = opt.Name, MaxSize = 15, Font = FONT2, Parent = b })
-		if opt.Color then
-			new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 4),
-				BackgroundColor3 = opt.Color, BorderSizePixel = 0, Parent = b })
+		if not opt.Color then
+			label({ Size = UDim2.fromScale(1, 1), Text = opt.Name, MaxSize = 14, Font = FONT2, Parent = b })
 		end
 		b.MouseButton1Click:Connect(function()
 			CombatEvent:FireServer("style", cat.Key, opt.Id)
@@ -214,8 +345,6 @@ for i, cat in ipairs(Config.Custom) do
 	end
 end
 
--- ajustes: FOV, volumen y sensibilidad
-local settingLabels = {}
 for i, cfg in ipairs({
 	{ Key = "fov", Name = "Campo de visión", Step = 5, Min = 60, Max = 120, Fmt = "%d" },
 	{ Key = "volume", Name = "Volumen", Step = 0.1, Min = 0, Max = 1, Fmt = "%d%%", Scale = 100 },
@@ -227,18 +356,32 @@ for i, cfg in ipairs({
 		value.Text = string.format(cfg.Fmt, opts[cfg.Key] * (cfg.Scale or 1))
 	end
 	for _, dir in ipairs({ -1, 1 }) do
-		local b = new("TextButton", { Size = UDim2.new(0, 54, 1, 0), LayoutOrder = dir < 0 and 1 or 3, Text = dir < 0 and "−" or "+",
-			Font = FONT, TextSize = 24, TextColor3 = WHITE, BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = holder })
+		local b = new("TextButton", { Size = UDim2.new(0, 44, 1, 0), LayoutOrder = dir < 0 and 1 or 3, Text = dir < 0 and "−" or "+",
+			Font = FONT, TextSize = 22, TextColor3 = WHITE, BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = holder })
 		corner(5, b)
 		b.MouseButton1Click:Connect(function()
 			opts[cfg.Key] = math.clamp(math.floor((opts[cfg.Key] + dir * cfg.Step) * 100 + 0.5) / 100, cfg.Min, cfg.Max)
 			show()
 		end)
 	end
-	value = label({ Size = UDim2.new(0, 110, 1, 0), LayoutOrder = 2, Text = "", MaxSize = 18, Parent = holder })
-	settingLabels[cfg.Key] = show
+	value = label({ Size = UDim2.new(0, 90, 1, 0), LayoutOrder = 2, Text = "", MaxSize = 17, Parent = holder })
 	show()
 end
+
+-- pie: nombre del arma y botón para salir al campo
+label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 34, 1, -24), Size = UDim2.new(0, 500, 0, 30), Font = FONT2, MaxSize = 18,
+	TextColor3 = Color3.fromRGB(205, 195, 180), TextXAlignment = Enum.TextXAlignment.Left,
+	Text = string.format("ESPADÓN · daño %d · alcance %.1f · dos manos", Config.Weapons[1].Slash.Damage, Config.Weapons[1].Length),
+	Parent = loadout })
+local spawnButton = new("TextButton", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -34, 1, -20), Size = UDim2.new(0, 320, 0, 52),
+	Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(120, 80, 30), Parent = loadout })
+corner(8, spawnButton)
+local spawnLabel = label({ Size = UDim2.fromScale(1, 1), Text = "SALIR AL CAMPO", MaxSize = 24, Parent = spawnButton })
+spawnButton.MouseButton1Click:Connect(function()
+	CombatEvent:FireServer("spawn")
+	CombatEvent:FireServer("armory", false)
+	menuOpen = false
+end)
 
 local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.new(0, 600, 0, 40),
 	Text = "", MaxSize = 30, TextStrokeTransparency = 0.3, Visible = false, Parent = gui })
@@ -264,8 +407,8 @@ end
 
 -- piezas en el marco de la empuñadura: origen en la mano derecha, -Z hacia la punta
 -- El espadón se arma con las piezas elegidas en la forja (hoja, guarda, empuñadura y pomo).
-local function buildWeapon(w, sty)
-	local model = new("Model", { Name = w.Id, Parent = weaponFolder })
+function buildWeapon(w, sty, parent)
+	local model = new("Model", { Name = w.Id, Parent = parent or weaponFolder })
 	local parts = {}
 	local blade = Config.StyleOption("Blade", sty.Blade)
 	local guard = Config.StyleOption("Guard", sty.Guard)
@@ -283,12 +426,13 @@ local function buildWeapon(w, sty)
 	local bodyLen = bladeLen - 0.7
 	if blade.Wave then
 		-- flamígera: tramos alternados que dan la silueta ondulada
-		local segs = 6
+		local segs = 7
 		local segLen = bodyLen / segs
 		for i = 0, segs - 1 do
 			local z = -0.35 - segLen * (i + 0.5)
-			add(Vector3.new(blade.Thick, blade.Width, segLen + 0.04), steel, Vector3.new(0, 0, z), nil, nil,
-				CFrame.Angles(0, 0, 0) * CFrame.Angles((i % 2 == 0 and 1 or -1) * 0.08, 0, 0))
+			local side = (i % 2 == 0) and 1 or -1
+			add(Vector3.new(blade.Thick, blade.Width, segLen + 0.06), steel, Vector3.new(0, side * blade.Width * 0.16, z), nil, nil,
+				CFrame.Angles(side * 0.14, 0, 0))
 		end
 	else
 		add(Vector3.new(blade.Thick, blade.Width, bodyLen), steel, Vector3.new(0, 0, -0.35 - bodyLen / 2))
@@ -299,23 +443,23 @@ local function buildWeapon(w, sty)
 	end
 
 	-- guarda
+	-- la guarda se abre hacia los filos (mismo eje que el ancho de la hoja), no hacia las caras planas
 	local span = guard.Span
 	if guard.Style == "recta" then
-		add(Vector3.new(span, 0.12, 0.13), dark, Vector3.new(0, 0, -0.28))
+		add(Vector3.new(0.12, span, 0.13), dark, Vector3.new(0, 0, -0.28))
 	elseif guard.Style == "curva" then
 		for _, side in ipairs({ -1, 1 }) do
-			add(Vector3.new(span * 0.55, 0.12, 0.13), dark, Vector3.new(side * span * 0.26, 0, -0.3), nil, nil, CFrame.Angles(0, 0, side * 0.35))
+			add(Vector3.new(0.12, span * 0.55, 0.13), dark, Vector3.new(0, side * span * 0.26, -0.3), nil, nil, CFrame.Angles(side * 0.35, 0, 0))
 		end
-		add(Vector3.new(0.2, 0.14, 0.15), dark, Vector3.new(0, 0, -0.28))
+		add(Vector3.new(0.14, 0.2, 0.15), dark, Vector3.new(0, 0, -0.28))
 	elseif guard.Style == "anillos" then
-		add(Vector3.new(span, 0.12, 0.13), dark, Vector3.new(0, 0, -0.28))
+		add(Vector3.new(0.12, span, 0.13), dark, Vector3.new(0, 0, -0.28))
 		for _, side in ipairs({ -1, 1 }) do
-			add(Vector3.new(0.08, 0.32, 0.32), dark, Vector3.new(side * span * 0.3, 0, -0.1), nil, Enum.PartType.Cylinder,
-				CFrame.Angles(0, math.rad(90), 0))
+			add(Vector3.new(0.08, 0.32, 0.32), dark, Vector3.new(0, side * span * 0.3, -0.1), nil, Enum.PartType.Cylinder)
 		end
 	else -- ese
 		for _, side in ipairs({ -1, 1 }) do
-			add(Vector3.new(span * 0.5, 0.12, 0.13), dark, Vector3.new(side * span * 0.24, 0, -0.28 + side * 0.1), nil, nil,
+			add(Vector3.new(0.12, span * 0.5, 0.13), dark, Vector3.new(0, side * span * 0.24, -0.28 + side * 0.1), nil, nil,
 				CFrame.Angles(side * 0.45, 0, 0))
 		end
 	end
@@ -334,7 +478,7 @@ local function buildWeapon(w, sty)
 	if pommel.Shape == "bola" then
 		add(Vector3.new(0.26, 0.26, 0.26), dark, Vector3.new(0, 0, pz), nil, Enum.PartType.Ball)
 	elseif pommel.Shape == "disco" then
-		add(Vector3.new(0.12, 0.34, 0.34), dark, Vector3.new(0, 0, pz), nil, Enum.PartType.Cylinder, CFrame.Angles(0, math.rad(90), 0))
+		add(Vector3.new(0.12, 0.34, 0.34), dark, Vector3.new(0, 0, pz), nil, Enum.PartType.Cylinder)
 	elseif pommel.Shape == "pera" then
 		add(Vector3.new(0.22, 0.22, 0.22), dark, Vector3.new(0, 0, pz - 0.06), nil, Enum.PartType.Ball)
 		add(Vector3.new(0.3, 0.3, 0.3), dark, Vector3.new(0, 0, pz + 0.1), nil, Enum.PartType.Ball)
@@ -345,7 +489,7 @@ local function buildWeapon(w, sty)
 	return { model = model, parts = parts, shield = nil }
 end
 
-local function placeParts(entries, cf)
+function placeParts(entries, cf)
 	for _, e in ipairs(entries) do
 		e[1].CFrame = cf * e[2]
 	end
@@ -656,7 +800,6 @@ end
 -- Input
 ---------------------------------------------------------------------------
 local fovToast = 0 -- aviso al cambiar el campo de visión con [ y ]
-local menuOpen = false
 local mouseDir = Vector2.new(0.6, -0.4) -- dirección acumulada del mouse (x derecha, y arriba)
 local lastPitchSent = 0
 
@@ -735,6 +878,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		board.Visible = true
 	elseif input.KeyCode == Enum.KeyCode.M then
 		menuOpen = not menuOpen
+		CombatEvent:FireServer("armory", menuOpen)
 	elseif input.KeyCode == Enum.KeyCode.H then
 		help.Visible = not help.Visible
 	elseif input.KeyCode == Enum.KeyCode.F4 then
@@ -769,6 +913,7 @@ end)
 player.CharacterAdded:Connect(function(char)
 	predicted = nil
 	task.defer(applyCameraMode)
+	task.delay(0.4, ensureKnightPreview) -- deja lista la estatua de la armería con el caballero vivo y de pie
 end)
 if player.Character then
 	applyCameraMode()
@@ -1149,18 +1294,37 @@ RunService.RenderStepped:Connect(function(dt)
 	stateText.Text = riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
-	loadout.Visible = dead or menuOpen
-	deathText.Visible = dead
-	if dead then
-		deathText.Text = "Elegí tu arma · reaparecés en unos segundos"
+	if dead and not wasDead then
+		menuOpen = true -- al morir se abre la armería y la reaparición espera
+		CombatEvent:FireServer("armory", true)
+	elseif not dead and wasDead then
+		menuOpen = false
 	end
+	wasDead = dead
+	loadout.Visible = dead or menuOpen
+	deathText.Visible = false
 	if loadout.Visible then
 		local sty = styleOf(player.Character)
 		for key, buttons in pairs(styleButtons) do
 			for id, b in pairs(buttons) do
-				b.BackgroundColor3 = id == sty[key] and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+				local chosen = id == sty[key]
+				local opt = Config.StyleOption(key, id)
+				b.BackgroundColor3 = opt and opt.Color or (chosen and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30))
+				local stroke = b:FindFirstChildOfClass("UIStroke") or new("UIStroke", { Color = GOLD, Thickness = 2, Parent = b })
+				stroke.Enabled = chosen
 			end
 		end
+		refreshPreview(sty)
+		if preview.weapon then
+			placeParts(preview.weapon.parts, CFrame.new(0, -2.1, 0) * CFrame.Angles(0, os.clock() * 0.7, 0) * CFrame.Angles(math.rad(90), 0, 0))
+		end
+		if preview.knight then
+			preview.knight:PivotTo(CFrame.new(0, 0, 0) * CFrame.Angles(0, os.clock() * 0.5, 0))
+		end
+		local wait = (char and char:GetAttribute("CanSpawnAt") or 0) - serverNow()
+		local ready = not dead or wait <= 0
+		spawnButton.BackgroundColor3 = ready and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(60, 52, 44)
+		spawnLabel.Text = not dead and "VOLVER AL COMBATE" or (ready and "SALIR AL CAMPO" or string.format("ESPERÁ %.0f s", math.max(wait, 0)))
 	end
 
 	local phase = matchInfo:GetAttribute("Phase")
