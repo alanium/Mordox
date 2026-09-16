@@ -502,11 +502,15 @@ function buildWeapon(w, sty, parent)
 		for _, side in ipairs({ -1, 1 }) do
 			add(Vector3.new(0.08, 0.32, 0.32), dark, Vector3.new(0, side * span * 0.3, -0.1), nil, Enum.PartType.Cylinder)
 		end
-	else -- ese
-		add(Vector3.new(0.12, span * 0.6, 0.13), dark, Vector3.new(0, 0, -0.28))
+	else -- ese: barra recta y las dos puntas dobladas en sentidos opuestos (una hacia la hoja, otra hacia el pomo)
+		local barHalf = span * 0.33
+		local tipHalf = span * 0.19
+		local ang = 0.95
+		add(Vector3.new(0.12, barHalf * 2, 0.13), dark, Vector3.new(0, 0, -0.28))
 		for _, side in ipairs({ -1, 1 }) do
-			add(Vector3.new(0.12, span * 0.34, 0.13), dark, Vector3.new(0, side * span * 0.34, -0.28 + side * 0.07), nil, nil,
-				CFrame.Angles(side * 0.5, 0, 0))
+			local dy = side * (barHalf + math.cos(ang) * tipHalf)
+			local dz = side * math.sin(ang) * tipHalf
+			add(Vector3.new(0.12, tipHalf * 2, 0.13), dark, Vector3.new(0, dy, -0.28 + dz), nil, nil, CFrame.Angles(ang, 0, 0))
 		end
 	end
 
