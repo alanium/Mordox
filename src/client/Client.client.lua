@@ -192,11 +192,36 @@ local function viewport(pos, size, fieldOfView)
 	cam.FieldOfView = fieldOfView
 	cam.Parent = vp
 	vp.CurrentCamera = cam
-	return vp, world, cam
+	-- arrastrar con el mouse gira el modelo; la rueda acerca y aleja
+	local view = { yaw = 0, pitch = 0, zoom = 1, dist = 10, dragging = false, last = nil }
+	vp.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			view.dragging, view.last = true, input.Position
+		end
+	end)
+	vp.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseWheel then
+			view.zoom = math.clamp(view.zoom - input.Position.Z * 0.12, 0.5, 2)
+		end
+	end)
+	UserInputService.InputChanged:Connect(function(input)
+		if view.dragging and input.UserInputType == Enum.UserInputType.MouseMovement and view.last then
+			local d = input.Position - view.last
+			view.last = input.Position
+			view.yaw -= d.X * 0.01
+			view.pitch = math.clamp(view.pitch + d.Y * 0.008, -1.1, 1.1)
+		end
+	end)
+	UserInputService.InputEnded:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			view.dragging, view.last = false, nil
+		end
+	end)
+	return vp, world, cam, view
 end
 
-local swordVp, swordWorld, swordCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 32)
-local knightVp, knightWorld, knightCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 26)
+local swordVp, swordWorld, swordCam, swordView = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 32)
+local knightVp, knightWorld, knightCam, knightView = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 26)
 swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
 knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
 
@@ -277,7 +302,7 @@ local function buildKnightPreview()
 		local h = math.clamp(box.Position.Y, -1, 1) -- centro del caballero (el torso queda en el medio)
 		local dist = math.clamp(size.Y, 4, 8) * 0.8 / math.tan(math.rad(13))
 		local cx = math.clamp(box.Position.X, -1, 1) -- el caballero queda centrado en el recuadro
-		knightCam.CFrame = CFrame.lookAt(Vector3.new(cx, h, dist), Vector3.new(cx, h, 0))
+		knightView.dist, knightView.center = dist, Vector3.new(cx, h, 0)
 	end
 end
 
@@ -298,7 +323,7 @@ local function refreshPreview(sty)
 		end
 		preview.weapon = buildWeapon(weapon, sty, swordWorld)
 		local h = weapon.Length + weapon.Grip + 0.6
-		swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, h / (2 * math.tan(math.rad(16)))), Vector3.new())
+		swordView.dist = h / (2 * math.tan(math.rad(16)))
 	end
 	local kkey = table.concat({ sty.Helmet, sty.Armor, sty.Tabard }, "|")
 	ensureKnightPreview()
@@ -871,6 +896,9 @@ local function predictAttack(kind, angle)
 end
 
 local function attack(kind, angle)
+	if loadout.Visible then
+		return -- con la armería abierta no se pelea
+	end
 	predictAttack(kind, angle)
 	CombatEvent:FireServer("attack", kind, angle)
 end
@@ -881,7 +909,7 @@ UserInputService.InputChanged:Connect(function(input)
 		if d.Magnitude > 0.5 then
 			mouseDir = mouseDir * 0.75 + d.Unit * 0.25
 		end
-	elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+	elseif input.UserInputType == Enum.UserInputType.MouseWheel and not loadout.Visible then
 		if input.Position.Z > 0 then
 			attack("stab", 0)
 		else
@@ -1369,10 +1397,14 @@ RunService.RenderStepped:Connect(function(dt)
 		knightVp.Visible = tabs.current == "equipo"
 		refreshPreview(sty)
 		if preview.weapon then
-			placeParts(preview.weapon.parts, CFrame.new(0, -2.1, 0) * CFrame.Angles(0, os.clock() * 0.7, 0) * CFrame.Angles(math.rad(90), 0, 0))
+			local turn = CFrame.Angles(0, swordView.yaw, 0) * CFrame.Angles(swordView.pitch, 0, 0)
+			placeParts(preview.weapon.parts, turn * CFrame.new(0, -2.1, 0) * CFrame.Angles(math.rad(90), 0, 0))
+			swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, swordView.dist * swordView.zoom), Vector3.new())
 		end
 		if preview.knight then
-			preview.knight:PivotTo(CFrame.new(0, 0, 0) * CFrame.Angles(0, os.clock() * 0.5, 0))
+			local c = knightView.center or Vector3.new()
+			preview.knight:PivotTo(CFrame.Angles(0, knightView.yaw, 0) * CFrame.Angles(knightView.pitch * 0.35, 0, 0))
+			knightCam.CFrame = CFrame.lookAt(c + Vector3.new(0, 0, knightView.dist * knightView.zoom), c)
 		end
 		local wait = (char and char:GetAttribute("CanSpawnAt") or 0) - serverNow()
 		local ready = not dead or wait <= 0
