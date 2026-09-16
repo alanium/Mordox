@@ -182,7 +182,7 @@ label({ Position = UDim2.new(0, 34, 0, 20), Size = UDim2.new(0, 500, 0, 40), Tex
 
 -- vista 3D: arma a la izquierda, caballero al lado
 local function viewport(pos, size, fieldOfView)
-	local vp = new("ViewportFrame", { Position = pos, Size = size, BackgroundColor3 = Color3.fromRGB(22, 19, 17), BackgroundTransparency = 0.25,
+	local vp = new("ViewportFrame", { Position = pos, Size = size, BackgroundColor3 = Color3.fromRGB(22, 19, 17),
 		Ambient = Color3.fromRGB(150, 145, 140), LightColor = Color3.fromRGB(255, 245, 225), LightDirection = Vector3.new(-0.4, -0.7, -0.6),
 		Parent = loadout })
 	corner(10, vp)
@@ -195,8 +195,8 @@ local function viewport(pos, size, fieldOfView)
 	return vp, world, cam
 end
 
-local swordVp, swordWorld, swordCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 420, 1, -160), 32)
-local knightVp, knightWorld, knightCam = viewport(UDim2.new(0, 474, 0, 80), UDim2.new(0, 300, 1, -160), 26)
+local swordVp, swordWorld, swordCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 32)
+local knightVp, knightWorld, knightCam = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 26)
 swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
 knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
 
@@ -229,37 +229,27 @@ local function paintKnight(model, sty)
 	end
 end
 
--- pone al clon en la pose de reposo del esqueleto (el original está peleando o caído)
-local function poseRig(model)
+-- lleva al clon al origen y lo endereza, manteniendo la pose que tenía el caballero
+-- (los brazos y la armadura están anclados por la animación, así que se mueven a mano)
+local function centerRig(model)
 	local root = model:FindFirstChild("HumanoidRootPart")
 	if not root then
 		return
 	end
-	local welds = {}
-	for _, w in ipairs(model:GetDescendants()) do
-		if w:IsA("WeldConstraint") and w.Part0 and w.Part1 then
-			table.insert(welds, { w.Part0, w.Part1, w.Part0.CFrame:Inverse() * w.Part1.CFrame })
+	local _, yaw = root.CFrame:ToEulerAnglesYXZ()
+	local base = CFrame.new(root.Position) * CFrame.Angles(0, yaw, 0)
+	local inv = base:Inverse()
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.CFrame = inv * d.CFrame
 		end
-	end
-	root.CFrame = CFrame.new()
-	local done = { [root] = true }
-	for _ = 1, 8 do
-		for _, m in ipairs(model:GetDescendants()) do
-			if m:IsA("Motor6D") and m.Part0 and m.Part1 and done[m.Part0] and not done[m.Part1] then
-				m.Part1.CFrame = m.Part0.CFrame * m.C0 * m.C1:Inverse()
-				done[m.Part1] = true
-			end
-		end
-	end
-	for _, e in ipairs(welds) do
-		e[2].CFrame = e[1].CFrame * e[3] -- la armadura vuelve encima de su hueso
 	end
 end
 
-local function ensureKnightPreview()
+local function buildKnightPreview()
 	local src = player.Character
 	local srcHum = src and src:FindFirstChildOfClass("Humanoid")
-	if src and preview.knightFrom ~= src and srcHum then
+	if src and preview.knightFrom ~= src and srcHum and srcHum.Health > 0 then
 		-- estatua del propio caballero para ver los cambios encima
 		if preview.knight then
 			preview.knight:Destroy()
@@ -273,7 +263,7 @@ local function ensureKnightPreview()
 				d.LocalTransparencyModifier = 0
 			end
 		end
-		poseRig(clone)
+		centerRig(clone)
 		clone.PrimaryPart = clone:FindFirstChild("HumanoidRootPart") -- así queda derecho al girarlo
 		for _, d in ipairs(clone:GetDescendants()) do
 			if d:IsA("BasePart") then
@@ -284,9 +274,17 @@ local function ensureKnightPreview()
 		clone:PivotTo(CFrame.new())
 		preview.knight, preview.knightFrom, preview.knightKey = clone, src, ""
 		local box, size = clone:GetBoundingBox()
-		local dist = size.Y * 0.75 / math.tan(math.rad(13))
-		local h = box.Position.Y -- centro real del caballero: así entra entero en el recuadro
-		knightCam.CFrame = CFrame.lookAt(Vector3.new(0, h, dist), Vector3.new(0, h, 0))
+		local h = math.clamp(box.Position.Y, -1, 1) -- centro del caballero (el torso queda en el medio)
+		local dist = math.clamp(size.Y, 4, 8) * 0.8 / math.tan(math.rad(13))
+		local cx = math.clamp(box.Position.X, -1, 1) -- el caballero queda centrado en el recuadro
+		knightCam.CFrame = CFrame.lookAt(Vector3.new(cx, h, dist), Vector3.new(cx, h, 0))
+	end
+end
+
+local function ensureKnightPreview()
+	local ok, err = pcall(buildKnightPreview)
+	if not ok then
+		warn("Mordox: no se pudo armar la estatua de la armería:", err)
 	end
 end
 
@@ -311,13 +309,27 @@ local function refreshPreview(sty)
 end
 
 -- columna derecha: piezas del arma, caballero y ajustes
+local tabs = { current = "arma", rows = {}, buttons = {} }
+local tabBar = new("Frame", { Position = UDim2.new(0, 794, 0, 26), Size = UDim2.new(1, -828, 0, 44), BackgroundTransparency = 1, Parent = loadout })
+new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 8), Parent = tabBar })
+for i, tab in ipairs({ { Id = "arma", Name = "ARMA" }, { Id = "equipo", Name = "EQUIPO" }, { Id = "ajustes", Name = "AJUSTES" } }) do
+	local b = new("TextButton", { Size = UDim2.new(0, 150, 1, 0), LayoutOrder = i, Text = "", AutoButtonColor = true,
+		BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = tabBar })
+	corner(6, b)
+	label({ Size = UDim2.fromScale(1, 1), Text = tab.Name, MaxSize = 18, Parent = b })
+	b.MouseButton1Click:Connect(function()
+		tabs.current = tab.Id
+	end)
+	tabs.buttons[tab.Id] = b
+end
+
 local menuList = new("ScrollingFrame", { Position = UDim2.new(0, 794, 0, 80), Size = UDim2.new(1, -828, 1, -160), BackgroundTransparency = 1,
 	ScrollBarThickness = 6, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, Parent = loadout })
 new("UIListLayout", { Padding = UDim.new(0, 8), Parent = menuList })
 
 local styleButtons = {}
 
-local function menuRow(order, title)
+local function menuRow(order, title, tab)
 	local row = new("Frame", { Size = UDim2.new(1, -10, 0, 64), LayoutOrder = order, BackgroundColor3 = Color3.fromRGB(30, 25, 21),
 		BackgroundTransparency = 0.2, Parent = menuList })
 	corner(6, row)
@@ -325,11 +337,41 @@ local function menuRow(order, title)
 		TextColor3 = Color3.fromRGB(215, 200, 175), TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
 	local holder = new("Frame", { Position = UDim2.new(0, 12, 0, 26), Size = UDim2.new(1, -24, 0, 32), BackgroundTransparency = 1, Parent = row })
 	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = holder })
+	table.insert(tabs.rows, { row = row, tab = tab })
 	return holder
 end
 
+-- primera pantalla de la pestaña ARMA: la lista de armas (por ahora solo el espadón)
+local weaponList = new("Frame", { Size = UDim2.new(1, -10, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 0,
+	BackgroundTransparency = 1, Parent = menuList })
+new("UIListLayout", { Padding = UDim.new(0, 8), Parent = weaponList })
+for i, w in ipairs(Config.Weapons) do
+	local b = new("TextButton", { Size = UDim2.new(1, 0, 0, 86), LayoutOrder = i, Text = "", AutoButtonColor = true,
+		BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = weaponList })
+	corner(6, b)
+	label({ Position = UDim2.new(0, 14, 0, 8), Size = UDim2.new(1, -28, 0, 28), Text = w.Name, MaxSize = 22,
+		TextXAlignment = Enum.TextXAlignment.Left, Parent = b })
+	label({ Position = UDim2.new(0, 14, 0, 40), Size = UDim2.new(1, -28, 0, 38), Font = FONT2, MaxSize = 15,
+		TextColor3 = Color3.fromRGB(200, 190, 175), TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+		Text = string.format("Dos manos · daño %d al tajo, %d a la estocada\nalcance %.1f · carga %.2f s · tocá para forjarla",
+			w.Slash.Damage, w.Stab.Damage, w.Length, w.Slash.Windup), Parent = b })
+	b.MouseButton1Click:Connect(function()
+		CombatEvent:FireServer("loadout", w.Id)
+		tabs.weapon = w.Id
+	end)
+end
+
+local backButton = new("TextButton", { Size = UDim2.new(0, 220, 0, 34), LayoutOrder = 0, Text = "", AutoButtonColor = true,
+	BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = menuList })
+corner(6, backButton)
+label({ Size = UDim2.fromScale(1, 1), Text = "← Volver a las armas", MaxSize = 16, Font = FONT2, Parent = backButton })
+backButton.MouseButton1Click:Connect(function()
+	tabs.weapon = nil
+end)
+
+local WEAPON_KEYS = { Blade = true, Guard = true, Grip = true, Pommel = true, Metal = true }
 for i, cat in ipairs(Config.Custom) do
-	local holder = menuRow(i, cat.Name)
+	local holder = menuRow(i, cat.Name, WEAPON_KEYS[cat.Key] and "arma" or "equipo")
 	styleButtons[cat.Key] = {}
 	for j, opt in ipairs(cat.Options) do
 		local b = new("TextButton", { Size = UDim2.new(0, opt.Color and 44 or 108, 1, 0), LayoutOrder = j, Text = "", AutoButtonColor = true,
@@ -350,7 +392,7 @@ for i, cfg in ipairs({
 	{ Key = "volume", Name = "Volumen", Step = 0.1, Min = 0, Max = 1, Fmt = "%d%%", Scale = 100 },
 	{ Key = "sens", Name = "Sensibilidad del mouse", Step = 0.1, Min = 0.2, Max = 2, Fmt = "%.1f" },
 }) do
-	local holder = menuRow(#Config.Custom + i, cfg.Name)
+	local holder = menuRow(#Config.Custom + i, cfg.Name, "ajustes")
 	local value
 	local function show()
 		value.Text = string.format(cfg.Fmt, opts[cfg.Key] * (cfg.Scale or 1))
@@ -1314,6 +1356,17 @@ RunService.RenderStepped:Connect(function(dt)
 				stroke.Enabled = chosen
 			end
 		end
+		local forging = tabs.current == "arma" and tabs.weapon ~= nil
+		for _, r in ipairs(tabs.rows) do
+			r.row.Visible = r.tab == tabs.current and (r.tab ~= "arma" or forging)
+		end
+		weaponList.Visible = tabs.current == "arma" and not forging
+		backButton.Visible = forging
+		for id, b in pairs(tabs.buttons) do
+			b.BackgroundColor3 = id == tabs.current and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+		end
+		swordVp.Visible = tabs.current ~= "equipo"
+		knightVp.Visible = tabs.current == "equipo"
 		refreshPreview(sty)
 		if preview.weapon then
 			placeParts(preview.weapon.parts, CFrame.new(0, -2.1, 0) * CFrame.Angles(0, os.clock() * 0.7, 0) * CFrame.Angles(math.rad(90), 0, 0))
