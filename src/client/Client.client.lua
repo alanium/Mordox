@@ -42,8 +42,6 @@ end
 
 -- Sonidos (biblioteca ProSoundEffects de Roblox: se pueden usar en cualquier juego)
 local SOUNDS = {
-	swing = { "rbxassetid://9119740226", "rbxassetid://9119710806", "rbxassetid://9119711581", "rbxassetid://9119711209" },
-	heavySwing = { "rbxassetid://9114156252", "rbxassetid://9114157869" },
 	parry = { "rbxassetid://9119072660", "rbxassetid://9119072674" },
 	block = { "rbxassetid://9116693083" },
 	cut = { "rbxassetid://9117331172", "rbxassetid://9117330579" }, -- solo impactos, sin voces
@@ -52,7 +50,6 @@ local SOUNDS = {
 	clash = { "rbxassetid://9116764832" },
 	death = { "rbxassetid://9113475819" },
 	disarm = { "rbxassetid://9114007026" },
-	feint = { "rbxassetid://9119711209" },
 }
 
 ---------------------------------------------------------------------------
@@ -224,6 +221,9 @@ local swordVp, swordWorld, swordCam, swordView = viewport(UDim2.new(0, 34, 0, 80
 local knightVp, knightWorld, knightCam, knightView = viewport(UDim2.new(0, 34, 0, 80), UDim2.new(0, 740, 1, -160), 26)
 swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
 knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
+
+local emptyView = label({ Position = UDim2.new(0, 34, 0, 80), Size = UDim2.new(0, 740, 1, -160), Font = FONT2, MaxSize = 20,
+	TextColor3 = Color3.fromRGB(150, 140, 125), TextWrapped = true, Text = "", Parent = loadout })
 
 local preview = { weapon = nil, key = "", knight = nil, knightKey = "" }
 
@@ -768,16 +768,6 @@ local function animateKnight(char, t, dt)
 	local base, tip, dir, edge = Swing.WorldPose(body, pitch, weapon, st)
 	k.smAnim = k.smAnim or {}
 	base, tip, dir, edge = smoothWeapon(k.smAnim, body, base, dir, st, dt, weapon.Length, edge)
-	-- sonido de la hoja cortando el aire al empezar cada golpe (para todos los caballeros)
-	local key = st.State .. st.Phase .. tostring(char:GetAttribute("PhaseStart"))
-	if key ~= k.soundKey then
-		k.soundKey = key
-		if st.State == "attack" and st.Phase == "release" then
-			k.playSwing = base
-		elseif st.State == "kick" and st.Phase == "windup" then
-			k.playKick = hrp.Position
-		end
-	end
 	k.body, k.pitch, k.st, k.weaponDef = body, pitch, st, weapon
 
 	-- brazo derecho a la empuñadura; el izquierdo más atrás en el mango (dos manos) o con el escudo
@@ -949,6 +939,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		board.Visible = true
 	elseif input.KeyCode == Enum.KeyCode.M then
 		menuOpen = not menuOpen
+		if menuOpen then
+			tabs.weapon = nil -- se abre en la lista de armas, sin modelo todavía
+		end
 		CombatEvent:FireServer("armory", menuOpen)
 	elseif input.KeyCode == Enum.KeyCode.H then
 		help.Visible = not help.Visible
@@ -1135,10 +1128,9 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c, d, e, g)
 	elseif kind == "kick" then
 		sound(pick(SOUNDS.kick), a, 1)
 	elseif kind == "combo" then
-		sound(pick(SOUNDS.swing), a, 0.4)
+		showTech("COMBO", b, nil)
 	elseif kind == "feint" then
 		showTech(c or "FINTA", b, nil)
-		sound(pick(SOUNDS.feint), a, 0.5)
 	elseif kind == "death" then
 		sound(pick(SOUNDS.death), a, 1)
 	elseif kind == "disarm" then
@@ -1284,19 +1276,6 @@ RunService.RenderStepped:Connect(function(dt)
 	if os.clock() - fovToast < 1.2 then
 		stateText.Text = "FOV " .. opts.fov
 	end
-	-- sonidos de golpes en el aire (detectados en la animación)
-	for c2, kd in pairs(knights) do
-		if type(c2) ~= "string" then
-			if kd.playSwing then
-				sound(pick(math.random() < 0.4 and SOUNDS.heavySwing or SOUNDS.swing), kd.playSwing, 0.7)
-				kd.playSwing = nil
-			end
-			if kd.playKick then
-				sound(pick(SOUNDS.swing), kd.playKick, 0.4)
-				kd.playKick = nil
-			end
-		end
-	end
 	-- modo desarrollador (F3): hoja local (verde), rastro de la punta, hoja del servidor (rojo), cajas de golpe y datos
 	debugText.Visible = debugOn
 	if debugOn and char then
@@ -1367,6 +1346,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local dead = not hum or hum.Health <= 0
 	if dead and not wasDead then
 		menuOpen = true -- al morir se abre la armería y la reaparición espera
+		tabs.weapon = nil
 		CombatEvent:FireServer("armory", true)
 	elseif not dead and wasDead then
 		menuOpen = false
@@ -1394,9 +1374,13 @@ RunService.RenderStepped:Connect(function(dt)
 		for id, b in pairs(tabs.buttons) do
 			b.BackgroundColor3 = id == tabs.current and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
 		end
-		swordVp.Visible = tabs.current ~= "equipo"
+		swordVp.Visible = forging
 		knightVp.Visible = tabs.current == "equipo"
-		refreshPreview(sty)
+		emptyView.Visible = not swordVp.Visible and not knightVp.Visible
+		emptyView.Text = tabs.current == "ajustes" and "Ajustes del juego" or "Elegí un arma para verla y forjarla"
+		if forging or tabs.current == "equipo" then
+			refreshPreview(sty)
+		end
 		if preview.weapon then
 			local turn = CFrame.Angles(0, swordView.yaw, 0) * CFrame.Angles(swordView.pitch, 0, 0)
 			placeParts(preview.weapon.parts, turn * CFrame.new(0, swordView.offset or 0, 0) * CFrame.Angles(math.rad(90), 0, 0))
