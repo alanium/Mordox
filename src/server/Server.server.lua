@@ -658,6 +658,19 @@ local function handleAction(player, action, a1, a2)
 		end
 		return
 	end
+	if action == "style" then
+		-- personalización: solo estética, se valida contra la lista y se guarda
+		if type(a1) == "string" and type(a2) == "string" and Config.DefaultStyle[a1] then
+			local opt = Config.StyleOption(a1, a2)
+			if opt and opt.Id == a2 then
+				player:SetAttribute("Sty" .. a1, a2)
+				if f and f.char and not f.dead then
+					applyLook(player, f.char)
+				end
+			end
+		end
+		return
+	end
 	if action == "slowmo" then
 		-- cámara lenta para practicar: solo el dueño del juego o en Studio (afecta a todo el servidor)
 		if RunService:IsStudio() or player.UserId == game.CreatorId then
@@ -818,6 +831,76 @@ end
 
 local tabardIndex = 0
 
+---------------------------------------------------------------------------
+-- Personalización: se guarda por jugador y se aplica al caballero
+---------------------------------------------------------------------------
+local DataStoreService = game:GetService("DataStoreService")
+local styleStore
+pcall(function()
+	styleStore = DataStoreService:GetDataStore("MordoxStyle_v1")
+end)
+
+local function styleOf(player)
+	local t = {}
+	for key, default in pairs(Config.DefaultStyle) do
+		t[key] = player:GetAttribute("Sty" .. key) or default
+	end
+	return t
+end
+
+local function applyLook(player, char)
+	local sty = styleOf(player)
+	local armorOpt = Config.StyleOption("Armor", sty.Armor)
+	local tabardOpt = Config.StyleOption("Tabard", sty.Tabard)
+	local helmet = sty.Helmet
+	for _, d in ipairs(char:GetChildren()) do
+		if d:IsA("BasePart") then
+			if d.Name == "Tabard" or d.Name == "TabardBack" then
+				d.Color = tabardOpt.Color
+			elseif d.Name == "Breastplate" or d.Name == "Pauldron" then
+				d.Color = armorOpt.Color
+			elseif d.Name == "Greave" then
+				d.Color = armorOpt.Dark
+			elseif d.Name == "Helmet" then
+				d.Color = helmet == "capucha" and Color3.fromRGB(70, 72, 78) or armorOpt.Color
+				d.Material = helmet == "capucha" and Enum.Material.DiamondPlate or Enum.Material.Metal
+				d.Transparency = helmet == "sin" and 1 or 0
+			elseif d.Name == "Visor" then
+				d.Transparency = (helmet == "sin" or helmet == "capucha") and 1 or 0
+			elseif d.Name == "Crest" then
+				d.Color = tabardOpt.Color
+				d.Transparency = helmet == "yelmo" and 0 or 1
+			end
+		end
+	end
+	char:SetAttribute("Tabard", tabardOpt.Color)
+end
+
+local function loadStyle(player)
+	if not styleStore then
+		return
+	end
+	local ok, saved = pcall(function()
+		return styleStore:GetAsync("p" .. player.UserId)
+	end)
+	if ok and type(saved) == "table" then
+		for key in pairs(Config.DefaultStyle) do
+			if type(saved[key]) == "string" and Config.StyleOption(key, saved[key]).Id == saved[key] then
+				player:SetAttribute("Sty" .. key, saved[key])
+			end
+		end
+	end
+end
+
+local function saveStyle(player)
+	if not styleStore then
+		return
+	end
+	pcall(function()
+		styleStore:SetAsync("p" .. player.UserId, styleOf(player))
+	end)
+end
+
 local function onCharacter(player, char)
 	local f = fighters[player]
 	f.char = char
@@ -835,12 +918,16 @@ local function onCharacter(player, char)
 		char.AncestryChanged:Wait()
 	end
 	char:PivotTo(pickSpawn())
-	for _, d in ipairs(char:GetChildren()) do
-		if d.Name == "Tabard" or d.Name == "TabardBack" then
-			d.Color = f.tabard
+	if player:IsA("Player") then
+		applyLook(player, char)
+	else
+		for _, d in ipairs(char:GetChildren()) do
+			if d.Name == "Tabard" or d.Name == "TabardBack" then
+				d.Color = f.tabard
+			end
 		end
+		char:SetAttribute("Tabard", f.tabard)
 	end
-	char:SetAttribute("Tabard", f.tabard)
 	toIdle(f)
 	f.hum.Died:Connect(function()
 		if not f.dead then
@@ -873,11 +960,22 @@ Players.PlayerAdded:Connect(function(player)
 		onCharacter(player, char)
 	end)
 	player:SetAttribute("Weapon", Config.Weapons[1].Id)
+	for key, default in pairs(Config.DefaultStyle) do
+		player:SetAttribute("Sty" .. key, default)
+	end
+	loadStyle(player) -- lo que haya elegido la última vez
 	spawnPlayer(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
+	saveStyle(player)
 	fighters[player] = nil
+end)
+
+game:BindToClose(function()
+	for _, player in ipairs(Players:GetPlayers()) do
+		saveStyle(player)
+	end
 end)
 
 ---------------------------------------------------------------------------

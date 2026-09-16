@@ -73,30 +73,87 @@ Config.Zones = { head = 1.35, torso = 1, legs = 0.8 }
 -- Slash/Stab: tiempos (Windup, Release, Recovery) y daño base; Length = largo de la hoja desde las manos
 Config.Weapons = {
 	{
-		Id = "longsword", Name = "Espada larga", Kind = "twohand", Length = 3.6, Grip = 1.0,
-		Slash = { Windup = 0.59, Release = 0.38, Recovery = 0.47, Damage = 46, Type = "cut" },
-		Stab = { Windup = 0.63, Release = 0.33, Recovery = 0.50, Damage = 52, Type = "pierce" },
-		ParryDrain = 16, Color = Color3.fromRGB(205, 210, 220),
-	},
-	{
-		Id = "greataxe", Name = "Hacha de guerra", Kind = "twohand", Length = 3.4, Grip = 1.2,
-		Slash = { Windup = 0.77, Release = 0.43, Recovery = 0.62, Damage = 64, Type = "cut" },
-		Stab = { Windup = 0.70, Release = 0.35, Recovery = 0.56, Damage = 38, Type = "blunt" },
-		ParryDrain = 26, Color = Color3.fromRGB(150, 150, 160),
-	},
-	{
-		Id = "mace", Name = "Maza", Kind = "onehand", Length = 2.4, Grip = 0.4,
-		Slash = { Windup = 0.53, Release = 0.35, Recovery = 0.40, Damage = 40, Type = "blunt" },
-		Stab = { Windup = 0.59, Release = 0.30, Recovery = 0.45, Damage = 26, Type = "blunt" },
-		ParryDrain = 20, Color = Color3.fromRGB(120, 120, 130),
-	},
-	{
-		Id = "swordshield", Name = "Espada y escudo", Kind = "shield", Length = 2.6, Grip = 0.4,
-		Slash = { Windup = 0.50, Release = 0.34, Recovery = 0.40, Damage = 34, Type = "cut" },
-		Stab = { Windup = 0.53, Release = 0.30, Recovery = 0.43, Damage = 38, Type = "pierce" },
-		ParryDrain = 12, ShieldDrainPerHit = 10, Color = Color3.fromRGB(215, 215, 225),
+		Id = "espadon", Name = "Espadón", Kind = "twohand", Length = 3.9, Grip = 1.3,
+		Slash = { Windup = 0.62, Release = 0.40, Recovery = 0.50, Damage = 50, Type = "cut" },
+		Stab = { Windup = 0.66, Release = 0.34, Recovery = 0.52, Damage = 54, Type = "pierce" },
+		ParryDrain = 18, Color = Color3.fromRGB(205, 210, 220),
 	},
 }
+
+-- Personalización (solo estética: no cambia daño, alcance ni tiempos)
+-- Cada categoría tiene opciones con los datos que el cliente usa para dibujarlas.
+Config.Custom = {
+	{ Key = "Blade", Name = "Hoja", Options = {
+		{ Id = "recta", Name = "Recta", Width = 0.26, Thick = 0.075, Tip = 0.5, Fuller = true },
+		{ Id = "ancha", Name = "Ancha", Width = 0.36, Thick = 0.085, Tip = 0.7 },
+		{ Id = "estoque", Name = "De estoque", Width = 0.17, Thick = 0.1, Tip = 0.25 },
+		{ Id = "flamigera", Name = "Flamígera", Width = 0.28, Thick = 0.075, Tip = 0.55, Wave = true },
+	} },
+	{ Key = "Guard", Name = "Guarda", Options = {
+		{ Id = "cruz", Name = "Cruz recta", Span = 0.95, Style = "recta" },
+		{ Id = "curva", Name = "Curva", Span = 1.05, Style = "curva" },
+		{ Id = "anillos", Name = "Con anillos", Span = 0.85, Style = "anillos" },
+		{ Id = "ese", Name = "En ese", Span = 1.1, Style = "ese" },
+	} },
+	{ Key = "Grip", Name = "Empuñadura", Options = {
+		{ Id = "cuero", Name = "Cuero", Color = Color3.fromRGB(60, 40, 25), Material = "Leather" },
+		{ Id = "cuerda", Name = "Cuerda", Color = Color3.fromRGB(150, 130, 95), Material = "Fabric", Rings = true },
+		{ Id = "alambre", Name = "Alambre", Color = Color3.fromRGB(120, 105, 70), Material = "Metal", Rings = true },
+		{ Id = "madera", Name = "Madera", Color = Color3.fromRGB(95, 62, 38), Material = "Wood" },
+	} },
+	{ Key = "Pommel", Name = "Pomo", Options = {
+		{ Id = "disco", Name = "Disco", Shape = "disco" },
+		{ Id = "bola", Name = "Bola", Shape = "bola" },
+		{ Id = "pera", Name = "Pera", Shape = "pera" },
+		{ Id = "escudete", Name = "Escudete", Shape = "escudete" },
+	} },
+	{ Key = "Metal", Name = "Metal del arma", Options = {
+		{ Id = "acero", Name = "Acero", Color = Color3.fromRGB(205, 210, 220), Dark = Color3.fromRGB(80, 80, 88) },
+		{ Id = "oscuro", Name = "Acero oscuro", Color = Color3.fromRGB(120, 124, 132), Dark = Color3.fromRGB(45, 45, 52) },
+		{ Id = "bronce", Name = "Bronce", Color = Color3.fromRGB(196, 150, 78), Dark = Color3.fromRGB(110, 78, 34) },
+		{ Id = "blanco", Name = "Plata pulida", Color = Color3.fromRGB(240, 242, 248), Dark = Color3.fromRGB(150, 152, 160) },
+	} },
+	{ Key = "Helmet", Name = "Casco", Options = {
+		{ Id = "yelmo", Name = "Yelmo con cresta" },
+		{ Id = "bacinete", Name = "Bacinete" },
+		{ Id = "capucha", Name = "Capucha de malla" },
+		{ Id = "sin", Name = "Sin casco" },
+	} },
+	{ Key = "Armor", Name = "Color de armadura", Options = {
+		{ Id = "acero", Name = "Acero", Color = Color3.fromRGB(165, 170, 180), Dark = Color3.fromRGB(95, 98, 105) },
+		{ Id = "oscuro", Name = "Oscura", Color = Color3.fromRGB(95, 98, 108), Dark = Color3.fromRGB(55, 57, 64) },
+		{ Id = "bronce", Name = "Bronce", Color = Color3.fromRGB(180, 138, 72), Dark = Color3.fromRGB(105, 74, 32) },
+		{ Id = "negra", Name = "Negra", Color = Color3.fromRGB(58, 58, 62), Dark = Color3.fromRGB(32, 32, 36) },
+	} },
+	{ Key = "Tabard", Name = "Tabardo", Options = {
+		{ Id = "rojo", Name = "Rojo", Color = Color3.fromRGB(170, 35, 35) },
+		{ Id = "azul", Name = "Azul", Color = Color3.fromRGB(35, 70, 160) },
+		{ Id = "verde", Name = "Verde", Color = Color3.fromRGB(40, 120, 55) },
+		{ Id = "dorado", Name = "Dorado", Color = Color3.fromRGB(190, 150, 30) },
+		{ Id = "violeta", Name = "Violeta", Color = Color3.fromRGB(110, 40, 140) },
+		{ Id = "negro", Name = "Negro", Color = Color3.fromRGB(60, 60, 60) },
+	} },
+}
+
+Config.DefaultStyle = {
+	Blade = "recta", Guard = "cruz", Grip = "cuero", Pommel = "disco",
+	Metal = "acero", Helmet = "yelmo", Armor = "acero", Tabard = "rojo",
+}
+
+-- Devuelve la opción elegida (o la primera si el id no existe)
+function Config.StyleOption(key, id)
+	for _, cat in ipairs(Config.Custom) do
+		if cat.Key == key then
+			for _, opt in ipairs(cat.Options) do
+				if opt.Id == id then
+					return opt
+				end
+			end
+			return cat.Options[1]
+		end
+	end
+	return nil
+end
 
 function Config.Weapon(id)
 	for _, w in ipairs(Config.Weapons) do

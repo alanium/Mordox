@@ -112,6 +112,7 @@ corner(3, cross)
 local arrow = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 4, 0, 16),
 	BackgroundColor3 = GOLD, Parent = gui })
 corner(2, arrow)
+local opts = { fov = 90, volume = 0.8, sens = 1 } -- ajustes del menú (M)
 local toast = { text = "", untilT = 0 }
 local stateText = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 30), Size = UDim2.new(0, 300, 0, 26),
 	Text = "", TextColor3 = GOLD, MaxSize = 22, Parent = gui })
@@ -161,32 +162,91 @@ local function refreshBoard()
 	end
 end
 
--- selección de arma (al morir o al entrar)
-local loadout = new("Frame", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -90), Size = UDim2.new(0, 740, 0, 130),
-	BackgroundTransparency = 1, Visible = false, Parent = gui })
-new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 10), HorizontalAlignment = Enum.HorizontalAlignment.Center, Parent = loadout })
-local loadoutButtons = {}
-for i, w in ipairs(Config.Weapons) do
-	local b = new("TextButton", { Size = UDim2.new(0, 172, 1, 0), LayoutOrder = i, Text = "", AutoButtonColor = true,
-		BackgroundColor3 = Color3.fromRGB(35, 28, 24), Parent = loadout })
-	corner(8, b)
-	label({ Position = UDim2.new(0, 8, 0, 8), Size = UDim2.new(1, -16, 0, 26), Text = w.Name, MaxSize = 20, Parent = b })
-	label({ Position = UDim2.new(0, 8, 0, 40), Size = UDim2.new(1, -16, 0, 80), Font = FONT2, MaxSize = 14, TextWrapped = true,
-		TextColor3 = Color3.fromRGB(200, 190, 175), TextYAlignment = Enum.TextYAlignment.Top,
-		Text = string.format("Daño %d · Carga %.2fs\nAlcance %.1f · %s", w.Slash.Damage, w.Slash.Windup, w.Length,
-			w.Kind == "shield" and "Escudo (mantener clic derecho)" or (w.Kind == "twohand" and "Dos manos" or "Una mano")), Parent = b })
-	b.MouseButton1Click:Connect(function()
-		CombatEvent:FireServer("loadout", w.Id)
-	end)
-	loadoutButtons[w.Id] = b
+-- menú: personalización del arma y del caballero + ajustes (M, o al morir)
+local function styleOf(char)
+	local p = char and Players:GetPlayerFromCharacter(char)
+	local sty = {}
+	for key, default in pairs(Config.DefaultStyle) do
+		sty[key] = (p and p:GetAttribute("Sty" .. key)) or default
+	end
+	return sty
 end
-local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -230), Size = UDim2.new(0, 600, 0, 40),
+
+local loadout = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.5), Size = UDim2.new(0, 900, 0, 600),
+	BackgroundColor3 = Color3.fromRGB(18, 15, 13), BackgroundTransparency = 0.08, Visible = false, Parent = gui })
+corner(12, loadout)
+label({ Position = UDim2.new(0, 20, 0, 12), Size = UDim2.new(1, -40, 0, 34), Text = "FORJA Y AJUSTES", TextColor3 = GOLD, MaxSize = 26,
+	TextXAlignment = Enum.TextXAlignment.Left, Parent = loadout })
+label({ AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -20, 0, 16), Size = UDim2.new(0, 360, 0, 26), Font = FONT2, MaxSize = 15,
+	TextColor3 = Color3.fromRGB(190, 180, 165), TextXAlignment = Enum.TextXAlignment.Right, Text = "M para abrir y cerrar", Parent = loadout })
+local menuList = new("Frame", { Position = UDim2.new(0, 20, 0, 54), Size = UDim2.new(1, -40, 1, -70), BackgroundTransparency = 1, Parent = loadout })
+new("UIListLayout", { Padding = UDim.new(0, 6), Parent = menuList })
+
+local styleButtons = {} -- [key][id] = botón
+
+local function menuRow(order, title)
+	local row = new("Frame", { Size = UDim2.new(1, 0, 0, 44), LayoutOrder = order, BackgroundColor3 = Color3.fromRGB(30, 25, 21),
+		BackgroundTransparency = 0.25, Parent = menuList })
+	corner(6, row)
+	label({ Position = UDim2.new(0, 12, 0, 0), Size = UDim2.new(0, 210, 1, 0), Text = title, MaxSize = 18, Font = FONT2,
+		TextXAlignment = Enum.TextXAlignment.Left, Parent = row })
+	local holder = new("Frame", { Position = UDim2.new(0, 230, 0, 6), Size = UDim2.new(1, -240, 1, -12), BackgroundTransparency = 1, Parent = row })
+	new("UIListLayout", { FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), Parent = holder })
+	return holder
+end
+
+for i, cat in ipairs(Config.Custom) do
+	local holder = menuRow(i, cat.Name)
+	styleButtons[cat.Key] = {}
+	for j, opt in ipairs(cat.Options) do
+		local b = new("TextButton", { Size = UDim2.new(0, 148, 1, 0), LayoutOrder = j, Text = "", AutoButtonColor = true,
+			BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = holder })
+		corner(5, b)
+		label({ Size = UDim2.fromScale(1, 1), Text = opt.Name, MaxSize = 15, Font = FONT2, Parent = b })
+		if opt.Color then
+			new("Frame", { AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 0, 1, 0), Size = UDim2.new(1, 0, 0, 4),
+				BackgroundColor3 = opt.Color, BorderSizePixel = 0, Parent = b })
+		end
+		b.MouseButton1Click:Connect(function()
+			CombatEvent:FireServer("style", cat.Key, opt.Id)
+		end)
+		styleButtons[cat.Key][opt.Id] = b
+	end
+end
+
+-- ajustes: FOV, volumen y sensibilidad
+local settingLabels = {}
+for i, cfg in ipairs({
+	{ Key = "fov", Name = "Campo de visión", Step = 5, Min = 60, Max = 120, Fmt = "%d" },
+	{ Key = "volume", Name = "Volumen", Step = 0.1, Min = 0, Max = 1, Fmt = "%d%%", Scale = 100 },
+	{ Key = "sens", Name = "Sensibilidad del mouse", Step = 0.1, Min = 0.2, Max = 2, Fmt = "%.1f" },
+}) do
+	local holder = menuRow(#Config.Custom + i, cfg.Name)
+	local value
+	local function show()
+		value.Text = string.format(cfg.Fmt, opts[cfg.Key] * (cfg.Scale or 1))
+	end
+	for _, dir in ipairs({ -1, 1 }) do
+		local b = new("TextButton", { Size = UDim2.new(0, 54, 1, 0), LayoutOrder = dir < 0 and 1 or 3, Text = dir < 0 and "−" or "+",
+			Font = FONT, TextSize = 24, TextColor3 = WHITE, BackgroundColor3 = Color3.fromRGB(45, 37, 30), Parent = holder })
+		corner(5, b)
+		b.MouseButton1Click:Connect(function()
+			opts[cfg.Key] = math.clamp(math.floor((opts[cfg.Key] + dir * cfg.Step) * 100 + 0.5) / 100, cfg.Min, cfg.Max)
+			show()
+		end)
+	end
+	value = label({ Size = UDim2.new(0, 110, 1, 0), LayoutOrder = 2, Text = "", MaxSize = 18, Parent = holder })
+	settingLabels[cfg.Key] = show
+	show()
+end
+
+local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -40), Size = UDim2.new(0, 600, 0, 40),
 	Text = "", MaxSize = 30, TextStrokeTransparency = 0.3, Visible = false, Parent = gui })
 
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
 local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
 	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
@@ -203,42 +263,86 @@ local function weaponPart(model, size, color, offset, material, shape)
 end
 
 -- piezas en el marco de la empuñadura: origen en la mano derecha, -Z hacia la punta
-local function buildWeapon(w)
+-- El espadón se arma con las piezas elegidas en la forja (hoja, guarda, empuñadura y pomo).
+local function buildWeapon(w, sty)
 	local model = new("Model", { Name = w.Id, Parent = weaponFolder })
 	local parts = {}
-	local L = w.Length
-	local wood, leather, dark = Color3.fromRGB(95, 62, 38), Color3.fromRGB(60, 40, 25), Color3.fromRGB(80, 80, 88)
+	local blade = Config.StyleOption("Blade", sty.Blade)
+	local guard = Config.StyleOption("Guard", sty.Guard)
+	local grip = Config.StyleOption("Grip", sty.Grip)
+	local pommel = Config.StyleOption("Pommel", sty.Pommel)
+	local metal = Config.StyleOption("Metal", sty.Metal)
+	local steel, dark = metal.Color, metal.Dark
+	local L, G = w.Length, w.Grip
 	local function add(size, color, pos, material, shape, rot)
-		local entry = weaponPart(model, size, color, CFrame.new(pos) * (rot or CFrame.identity), material, shape)
-		table.insert(parts, entry)
+		table.insert(parts, weaponPart(model, size, color, CFrame.new(pos) * (rot or CFrame.identity), material, shape))
 	end
-	if w.Id == "longsword" or w.Id == "swordshield" then
-		local bladeLen = L - 0.35
-		add(Vector3.new(0.07, 0.26, bladeLen), w.Color, Vector3.new(0, 0, -0.35 - bladeLen / 2))
-		add(Vector3.new(0.9, 0.12, 0.12), dark, Vector3.new(0, 0, -0.28))
-		add(Vector3.new(0.13, 0.13, w.Grip + 0.3), leather, Vector3.new(0, 0, (w.Grip + 0.3) / 2 - 0.25), Enum.Material.Leather)
-		add(Vector3.new(0.24, 0.24, 0.24), dark, Vector3.new(0, 0, w.Grip + 0.1), nil, Enum.PartType.Ball)
-	elseif w.Id == "greataxe" then
-		add(Vector3.new(0.16, 0.16, L + w.Grip), wood, Vector3.new(0, 0, (w.Grip - L) / 2), Enum.Material.Wood)
-		add(Vector3.new(0.1, 1.2, 1.0), w.Color, Vector3.new(0, 0.45, -L + 0.35))
-		add(Vector3.new(0.12, 0.3, 0.3), dark, Vector3.new(0, -0.15, -L + 0.35))
-	elseif w.Id == "mace" then
-		add(Vector3.new(0.14, 0.14, L + w.Grip), wood, Vector3.new(0, 0, (w.Grip - L) / 2), Enum.Material.Wood)
-		add(Vector3.new(0.62, 0.62, 0.62), w.Color, Vector3.new(0, 0, -L + 0.2), nil, Enum.PartType.Ball)
-		for i = 0, 3 do
-			add(Vector3.new(0.08, 0.8, 0.5), dark, Vector3.new(0, 0, -L + 0.2), nil, nil, CFrame.Angles(0, 0, i * math.pi / 4))
+
+	-- hoja: cuerpo, punta y (según el tipo) canal central u ondas
+	local bladeLen = L - 0.35
+	local bodyLen = bladeLen - 0.7
+	if blade.Wave then
+		-- flamígera: tramos alternados que dan la silueta ondulada
+		local segs = 6
+		local segLen = bodyLen / segs
+		for i = 0, segs - 1 do
+			local z = -0.35 - segLen * (i + 0.5)
+			add(Vector3.new(blade.Thick, blade.Width, segLen + 0.04), steel, Vector3.new(0, 0, z), nil, nil,
+				CFrame.Angles(0, 0, 0) * CFrame.Angles((i % 2 == 0 and 1 or -1) * 0.08, 0, 0))
+		end
+	else
+		add(Vector3.new(blade.Thick, blade.Width, bodyLen), steel, Vector3.new(0, 0, -0.35 - bodyLen / 2))
+	end
+	add(Vector3.new(blade.Thick * 0.9, blade.Width * blade.Tip, 0.7), steel, Vector3.new(0, 0, -0.35 - bodyLen - 0.35))
+	if blade.Fuller then
+		add(Vector3.new(blade.Thick + 0.02, blade.Width * 0.3, bodyLen * 0.8), dark, Vector3.new(0, 0, -0.35 - bodyLen / 2))
+	end
+
+	-- guarda
+	local span = guard.Span
+	if guard.Style == "recta" then
+		add(Vector3.new(span, 0.12, 0.13), dark, Vector3.new(0, 0, -0.28))
+	elseif guard.Style == "curva" then
+		for _, side in ipairs({ -1, 1 }) do
+			add(Vector3.new(span * 0.55, 0.12, 0.13), dark, Vector3.new(side * span * 0.26, 0, -0.3), nil, nil, CFrame.Angles(0, 0, side * 0.35))
+		end
+		add(Vector3.new(0.2, 0.14, 0.15), dark, Vector3.new(0, 0, -0.28))
+	elseif guard.Style == "anillos" then
+		add(Vector3.new(span, 0.12, 0.13), dark, Vector3.new(0, 0, -0.28))
+		for _, side in ipairs({ -1, 1 }) do
+			add(Vector3.new(0.08, 0.32, 0.32), dark, Vector3.new(side * span * 0.3, 0, -0.1), nil, Enum.PartType.Cylinder,
+				CFrame.Angles(0, math.rad(90), 0))
+		end
+	else -- ese
+		for _, side in ipairs({ -1, 1 }) do
+			add(Vector3.new(span * 0.5, 0.12, 0.13), dark, Vector3.new(side * span * 0.24, 0, -0.28 + side * 0.1), nil, nil,
+				CFrame.Angles(side * 0.45, 0, 0))
 		end
 	end
-	local shield
-	if w.Kind == "shield" then
-		shield = new("Model", { Name = "Shield", Parent = weaponFolder })
-		local s = {}
-		table.insert(s, weaponPart(shield, Vector3.new(2.2, 2.8, 0.2), Color3.fromRGB(120, 30, 30), CFrame.new(0, 0, -0.25), Enum.Material.Wood))
-		table.insert(s, weaponPart(shield, Vector3.new(2.3, 0.2, 0.22), dark, CFrame.new(0, 1.3, -0.25)))
-		table.insert(s, weaponPart(shield, Vector3.new(0.5, 0.5, 0.3), dark, CFrame.new(0, 0, -0.4), nil, Enum.PartType.Ball))
-		shield = { model = shield, parts = s }
+
+	-- empuñadura
+	local gripMat = Enum.Material[grip.Material] or Enum.Material.Leather
+	add(Vector3.new(0.14, 0.14, G + 0.3), grip.Color, Vector3.new(0, 0, (G + 0.3) / 2 - 0.25), gripMat)
+	if grip.Rings then
+		for i = 1, 4 do
+			add(Vector3.new(0.17, 0.17, 0.05), grip.Color, Vector3.new(0, 0, -0.1 + i * (G / 4.5)), gripMat)
+		end
 	end
-	return { model = model, parts = parts, shield = shield }
+
+	-- pomo
+	local pz = G + 0.1
+	if pommel.Shape == "bola" then
+		add(Vector3.new(0.26, 0.26, 0.26), dark, Vector3.new(0, 0, pz), nil, Enum.PartType.Ball)
+	elseif pommel.Shape == "disco" then
+		add(Vector3.new(0.12, 0.34, 0.34), dark, Vector3.new(0, 0, pz), nil, Enum.PartType.Cylinder, CFrame.Angles(0, math.rad(90), 0))
+	elseif pommel.Shape == "pera" then
+		add(Vector3.new(0.22, 0.22, 0.22), dark, Vector3.new(0, 0, pz - 0.06), nil, Enum.PartType.Ball)
+		add(Vector3.new(0.3, 0.3, 0.3), dark, Vector3.new(0, 0, pz + 0.1), nil, Enum.PartType.Ball)
+	else -- escudete
+		add(Vector3.new(0.3, 0.3, 0.16), steel, Vector3.new(0, 0, pz))
+		add(Vector3.new(0.16, 0.16, 0.2), dark, Vector3.new(0, 0, pz + 0.08))
+	end
+	return { model = model, parts = parts, shield = nil }
 end
 
 local function placeParts(entries, cf)
@@ -433,11 +537,13 @@ local function animateKnight(char, t, dt)
 	if not k or hum.Health <= 0 or not (k.rArm and k.lArm) then
 		return
 	end
-	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "longsword")
-	if not k.weapon or k.weaponId ~= weapon.Id then
+	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "espadon")
+	local sty = styleOf(char)
+	local key = table.concat({ weapon.Id, sty.Blade, sty.Guard, sty.Grip, sty.Pommel, sty.Metal }, "|")
+	if not k.weapon or k.weaponId ~= key then
 		destroyWeapon(k.weapon)
-		k.weapon = buildWeapon(weapon)
-		k.weaponId = weapon.Id
+		k.weapon = buildWeapon(weapon, sty)
+		k.weaponId = key
 	end
 	local st = poseState(readState(char), weapon, t)
 	local isLocal = char == player.Character
@@ -549,7 +655,8 @@ end
 ---------------------------------------------------------------------------
 -- Input
 ---------------------------------------------------------------------------
-local fov, fovToast = 90, 0 -- campo de visión: [ y ]
+local fovToast = 0 -- aviso al cambiar el campo de visión con [ y ]
+local menuOpen = false
 local mouseDir = Vector2.new(0.6, -0.4) -- dirección acumulada del mouse (x derecha, y arriba)
 local lastPitchSent = 0
 
@@ -566,7 +673,7 @@ local function predictAttack(kind, angle)
 		return
 	end
 	local st = char:GetAttribute("St")
-	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "longsword")
+	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "espadon")
 	local phase = char:GetAttribute("Phase")
 	local comboable = st == "attack" and phase == "recovery" and char:GetAttribute("CanCombo") == true
 		and (char:GetAttribute("Stamina") or 0) >= Config.Stamina.ComboMin
@@ -608,6 +715,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
 	end
+	if loadout.Visible and input.KeyCode ~= Enum.KeyCode.M and input.KeyCode ~= Enum.KeyCode.H and input.KeyCode ~= Enum.KeyCode.Tab then
+		return -- con la forja abierta el teclado no pelea
+	end
 	if input.UserInputType == Enum.UserInputType.MouseButton2 then
 		CombatEvent:FireServer("parry")
 	elseif input.KeyCode == Enum.KeyCode.Q then
@@ -623,6 +733,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	elseif input.KeyCode == Enum.KeyCode.Tab then
 		refreshBoard()
 		board.Visible = true
+	elseif input.KeyCode == Enum.KeyCode.M then
+		menuOpen = not menuOpen
 	elseif input.KeyCode == Enum.KeyCode.H then
 		help.Visible = not help.Visible
 	elseif input.KeyCode == Enum.KeyCode.F4 then
@@ -639,7 +751,7 @@ UserInputService.InputBegan:Connect(function(input, processed)
 			debugParts = {}
 		end
 	elseif input.KeyCode == Enum.KeyCode.LeftBracket or input.KeyCode == Enum.KeyCode.RightBracket then
-		fov = math.clamp(fov + (input.KeyCode == Enum.KeyCode.RightBracket and 5 or -5), 60, 120)
+		opts.fov = math.clamp(opts.fov + (input.KeyCode == Enum.KeyCode.RightBracket and 5 or -5), 60, 120)
 		fovToast = os.clock()
 	end
 end)
@@ -678,7 +790,7 @@ end
 
 local function sound(id, pos, volume)
 	local p = new("Part", { Anchored = true, CanCollide = false, CanQuery = false, Transparency = 1, Size = Vector3.one * 0.2, CFrame = CFrame.new(pos), Parent = workspace })
-	local s = new("Sound", { SoundId = id, Volume = volume or 0.8, RollOffMaxDistance = 120, Parent = p })
+	local s = new("Sound", { SoundId = id, Volume = (volume or 0.8) * opts.volume, RollOffMaxDistance = 120, Parent = p })
 	s:Play()
 	Debris:AddItem(p, 3)
 end
@@ -903,7 +1015,7 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 				target = math.clamp(math.min(target, turn.sens * Config.Combat.TurnCap / rate), 0.15, 1)
 			end
 			turn.sens += (target - turn.sens) * (attacking and 0.6 or 0.2)
-			UserInputService.MouseDeltaSensitivity = turn.sens
+			UserInputService.MouseDeltaSensitivity = turn.sens * opts.sens
 		end
 		turn.yaw = yaw
 	end
@@ -938,7 +1050,7 @@ RunService.RenderStepped:Connect(function(dt)
 		end
 	end
 
-	camera.FieldOfView = fov
+	camera.FieldOfView = opts.fov
 	local mk = os.clock() - feedbackT.marker
 	hitMarker.Visible = mk < 0.25
 	hitMarker.Size = UDim2.new(0, 34 + (1 - math.clamp(mk / 0.25, 0, 1)) * 16, 0, 34 + (1 - math.clamp(mk / 0.25, 0, 1)) * 16)
@@ -954,13 +1066,13 @@ RunService.RenderStepped:Connect(function(dt)
 		shake.amount = a * math.exp(-dt * 14)
 	end
 	if os.clock() - fovToast < 1.2 then
-		stateText.Text = "FOV " .. fov
+		stateText.Text = "FOV " .. opts.fov
 	end
 	-- sonidos de golpes en el aire (detectados en la animación)
 	for c2, kd in pairs(knights) do
 		if type(c2) ~= "string" then
 			if kd.playSwing then
-				sound(pick(kd.weaponDef and kd.weaponDef.Kind == "twohand" and kd.weaponDef.Id == "greataxe" and SOUNDS.heavySwing or SOUNDS.swing), kd.playSwing, 0.7)
+				sound(pick(math.random() < 0.4 and SOUNDS.heavySwing or SOUNDS.swing), kd.playSwing, 0.7)
 				kd.playSwing = nil
 			end
 			if kd.playKick then
@@ -1010,7 +1122,7 @@ RunService.RenderStepped:Connect(function(dt)
 		debugText.Text = string.format("MODO DESARROLLADOR\nestado  %s %s  T=%.2f\nángulo  %d   tipo %s\nstamina %s\nping    %d ms\ngiro    %.0f°/s (tope %d)\nsens.   %.2f\nFOV     %d\nhoja: verde local · roja servidor\nrastro: verde normal · amarillo/rojo ACCEL · celeste/azul DRAG\nvelocidad punta x%.2f  %s",
 			st2 and st2.State or "-", st2 and st2.Phase or "", st2 and st2.T or 0, st2 and st2.Angle or 0, st2 and st2.Kind or "",
 			tostring(char:GetAttribute("Stamina")), math.floor(player:GetNetworkPing() * 1000),
-			turn.rate, Config.Combat.TurnCap, turn.sens, fov, k and k.tipRatio or 1,
+			turn.rate, Config.Combat.TurnCap, turn.sens, opts.fov, k and k.tipRatio or 1,
 			not (k and k.tipRatio) and "" or k.tipRatio > 1.12 and "ACCEL" or k.tipRatio < 0.88 and "DRAG" or "")
 	elseif not debugOn then
 		for _, p in ipairs(Players:GetPlayers()) do
@@ -1037,14 +1149,18 @@ RunService.RenderStepped:Connect(function(dt)
 	stateText.Text = riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
-	loadout.Visible = dead
+	loadout.Visible = dead or menuOpen
 	deathText.Visible = dead
 	if dead then
 		deathText.Text = "Elegí tu arma · reaparecés en unos segundos"
 	end
-	local myWeapon = player:GetAttribute("Weapon")
-	for id, b in pairs(loadoutButtons) do
-		b.BackgroundColor3 = id == myWeapon and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(35, 28, 24)
+	if loadout.Visible then
+		local sty = styleOf(player.Character)
+		for key, buttons in pairs(styleButtons) do
+			for id, b in pairs(buttons) do
+				b.BackgroundColor3 = id == sty[key] and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+			end
+		end
 	end
 
 	local phase = matchInfo:GetAttribute("Phase")
