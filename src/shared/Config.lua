@@ -88,38 +88,79 @@ Config.Weapons = {
 }
 
 -- Personalización (solo estética: no cambia daño, alcance ni tiempos)
--- Cada categoría tiene opciones con los datos que el cliente usa para dibujarlas.
-Config.Custom = {
-	{ Key = "Blade", Name = "Hoja", Options = {
-		{ Id = "recta", Name = "Recta", Width = 0.26, Thick = 0.075, Tip = 0.5, Fuller = true },
-		{ Id = "ancha", Name = "Ancha", Width = 0.36, Thick = 0.085, Tip = 0.7 },
-		{ Id = "estoque", Name = "De estoque", Width = 0.17, Thick = 0.1, Tip = 0.25 },
-		{ Id = "flamigera", Name = "Flamígera", Width = 0.28, Thick = 0.075, Tip = 0.55, Wave = true },
-	} },
-	{ Key = "Guard", Name = "Guarda", Options = {
-		{ Id = "cruz", Name = "Cruz recta", Span = 0.95, Style = "recta" },
-		{ Id = "curva", Name = "Curva", Span = 1.05, Style = "curva" },
-		{ Id = "anillos", Name = "Con anillos", Span = 0.85, Style = "anillos" },
-		{ Id = "ese", Name = "En ese", Span = 1.1, Style = "ese" },
-	} },
-	{ Key = "Grip", Name = "Empuñadura", Options = {
-		{ Id = "cuero", Name = "Cuero", Color = Color3.fromRGB(60, 40, 25), Material = "Leather" },
-		{ Id = "cuerda", Name = "Cuerda", Color = Color3.fromRGB(150, 130, 95), Material = "Fabric", Rings = true },
-		{ Id = "alambre", Name = "Alambre", Color = Color3.fromRGB(120, 105, 70), Material = "Metal", Rings = true },
-		{ Id = "madera", Name = "Madera", Color = Color3.fromRGB(95, 62, 38), Material = "Wood" },
-	} },
-	{ Key = "Pommel", Name = "Pomo", Options = {
-		{ Id = "disco", Name = "Disco", Shape = "disco" },
-		{ Id = "bola", Name = "Bola", Shape = "bola" },
-		{ Id = "pera", Name = "Pera", Shape = "pera" },
-		{ Id = "escudete", Name = "Escudete", Shape = "escudete" },
-	} },
-	{ Key = "Metal", Name = "Metal del arma", Options = {
-		{ Id = "acero", Name = "Acero", Color = Color3.fromRGB(205, 210, 220), Dark = Color3.fromRGB(80, 80, 88) },
-		{ Id = "oscuro", Name = "Acero oscuro", Color = Color3.fromRGB(120, 124, 132), Dark = Color3.fromRGB(45, 45, 52) },
-		{ Id = "bronce", Name = "Bronce", Color = Color3.fromRGB(196, 150, 78), Dark = Color3.fromRGB(110, 78, 34) },
-		{ Id = "blanco", Name = "Plata pulida", Color = Color3.fromRGB(240, 242, 248), Dark = Color3.fromRGB(150, 152, 160) },
-	} },
+-- Las piezas del arma son propias de cada arma; el equipo del caballero es común.
+local METAL = {
+	{ Id = "acero", Name = "Acero", Color = Color3.fromRGB(205, 210, 220), Dark = Color3.fromRGB(80, 80, 88) },
+	{ Id = "oscuro", Name = "Acero oscuro", Color = Color3.fromRGB(120, 124, 132), Dark = Color3.fromRGB(45, 45, 52) },
+	{ Id = "bronce", Name = "Bronce", Color = Color3.fromRGB(196, 150, 78), Dark = Color3.fromRGB(110, 78, 34) },
+	{ Id = "blanco", Name = "Plata pulida", Color = Color3.fromRGB(240, 242, 248), Dark = Color3.fromRGB(150, 152, 160) },
+}
+
+Config.WeaponCustom = {
+	espadon = {
+		{ Key = "Blade", Name = "Hoja", Options = {
+			{ Id = "recta", Name = "Recta", Width = 0.26, Thick = 0.075, Tip = 0.5, Fuller = true },
+			{ Id = "ancha", Name = "Ancha", Width = 0.36, Thick = 0.085, Tip = 0.7 },
+			{ Id = "estoque", Name = "De estoque", Width = 0.17, Thick = 0.1, Tip = 0.25 },
+			{ Id = "flamigera", Name = "Flamígera", Width = 0.28, Thick = 0.075, Tip = 0.55, Wave = true },
+		} },
+		{ Key = "Guard", Name = "Guarda", Options = {
+			{ Id = "cruz", Name = "Cruz recta", Span = 0.95, Style = "recta" },
+			{ Id = "curva", Name = "Curva", Span = 1.05, Style = "curva" },
+			{ Id = "anillos", Name = "Con anillos", Span = 0.85, Style = "anillos" },
+			{ Id = "ese", Name = "En ese", Span = 1.1, Style = "ese" },
+		} },
+		{ Key = "Grip", Name = "Empuñadura", Options = {
+			{ Id = "cuero", Name = "Cuero", Color = Color3.fromRGB(60, 40, 25), Material = "Leather" },
+			{ Id = "cuerda", Name = "Cuerda", Color = Color3.fromRGB(150, 130, 95), Material = "Fabric", Rings = true },
+			{ Id = "alambre", Name = "Alambre", Color = Color3.fromRGB(120, 105, 70), Material = "Metal", Rings = true },
+			{ Id = "madera", Name = "Madera", Color = Color3.fromRGB(95, 62, 38), Material = "Wood" },
+		} },
+		{ Key = "Pommel", Name = "Pomo", Options = {
+			{ Id = "disco", Name = "Disco", Shape = "disco" },
+			{ Id = "bola", Name = "Bola", Shape = "bola" },
+			{ Id = "pera", Name = "Pera", Shape = "pera" },
+			{ Id = "escudete", Name = "Escudete", Shape = "escudete" },
+		} },
+		{ Key = "Metal", Name = "Metal del arma", Options = METAL },
+	},
+	mandoble = {
+		{ Key = "Blade", Name = "Hoja", Options = {
+			{ Id = "guerra", Name = "De guerra", Width = 0.44, Thick = 0.1, Tip = 0.8 },
+			{ Id = "llameante", Name = "Llameante", Width = 0.36, Thick = 0.09, Tip = 0.6, Wave = true },
+			{ Id = "alargada", Name = "Alargada", Width = 0.3, Thick = 0.085, Tip = 0.35, Fuller = true },
+			{ Id = "pesada", Name = "Pesada", Width = 0.5, Thick = 0.12, Tip = 0.95 },
+		} },
+		{ Key = "Guard", Name = "Guarda", Options = {
+			{ Id = "barra", Name = "Barra larga", Span = 1.7, Style = "recta" },
+			{ Id = "cruzada", Name = "Cruzada", Span = 1.8, Style = "curva" },
+			{ Id = "anillada", Name = "Anillada", Span = 1.5, Style = "anillos" },
+			{ Id = "retorcida", Name = "Retorcida", Span = 1.9, Style = "ese" },
+		} },
+		{ Key = "Ricasso", Name = "Ricasso", Options = {
+			{ Id = "cuero", Name = "Forrado en cuero", Wrap = Color3.fromRGB(60, 40, 25), Material = "Leather", Lugs = true },
+			{ Id = "cuerda", Name = "Atado con cuerda", Wrap = Color3.fromRGB(150, 130, 95), Material = "Fabric", Lugs = true },
+			{ Id = "desnudo", Name = "Sin forrar", Wrap = nil, Lugs = true },
+			{ Id = "sin", Name = "Sin ganchos", Wrap = Color3.fromRGB(60, 40, 25), Material = "Leather" },
+		} },
+		{ Key = "Grip", Name = "Empuñadura", Options = {
+			{ Id = "doble", Name = "Cuero doble", Color = Color3.fromRGB(52, 34, 22), Material = "Leather", Rings = true },
+			{ Id = "trenzada", Name = "Cuerda trenzada", Color = Color3.fromRGB(150, 130, 95), Material = "Fabric", Rings = true },
+			{ Id = "madera", Name = "Madera tallada", Color = Color3.fromRGB(95, 62, 38), Material = "Wood" },
+			{ Id = "hierro", Name = "Hierro forjado", Color = Color3.fromRGB(90, 92, 100), Material = "Metal", Rings = true },
+		} },
+		{ Key = "Pommel", Name = "Pomo", Options = {
+			{ Id = "pera", Name = "Pera grande", Shape = "pera" },
+			{ Id = "cilindro", Name = "Cilindro", Shape = "disco" },
+			{ Id = "hierro", Name = "Bola de hierro", Shape = "bola" },
+			{ Id = "escudete", Name = "Escudete", Shape = "escudete" },
+		} },
+		{ Key = "Metal", Name = "Metal del arma", Options = METAL },
+	},
+}
+
+-- Equipo del caballero (común a todas las armas)
+Config.GearCustom = {
 	{ Key = "Helmet", Name = "Casco", Options = {
 		{ Id = "yelmo", Name = "Yelmo con cresta" },
 		{ Id = "bacinete", Name = "Bacinete" },
@@ -142,14 +183,35 @@ Config.Custom = {
 	} },
 }
 
-Config.DefaultStyle = {
-	Blade = "recta", Guard = "cruz", Grip = "cuero", Pommel = "disco",
-	Metal = "acero", Helmet = "yelmo", Armor = "acero", Tabard = "rojo",
-}
+Config.DefaultGear = { Helmet = "yelmo", Armor = "acero", Tabard = "rojo" }
 
--- Devuelve la opción elegida (o la primera si el id no existe)
-function Config.StyleOption(key, id)
-	for _, cat in ipairs(Config.Custom) do
+-- La primera opción de cada categoría es lo que trae el arma de fábrica
+function Config.DefaultWeaponStyle(weaponId)
+	local t = {}
+	for _, cat in ipairs(Config.WeaponCustom[weaponId] or {}) do
+		t[cat.Key] = cat.Options[1].Id
+	end
+	return t
+end
+
+-- Opción elegida de una pieza del arma (o la primera si el id no existe)
+function Config.WeaponOption(weaponId, key, id)
+	for _, cat in ipairs(Config.WeaponCustom[weaponId] or {}) do
+		if cat.Key == key then
+			for _, opt in ipairs(cat.Options) do
+				if opt.Id == id then
+					return opt
+				end
+			end
+			return cat.Options[1]
+		end
+	end
+	return nil
+end
+
+-- Opción elegida del equipo del caballero
+function Config.GearOption(key, id)
+	for _, cat in ipairs(Config.GearCustom) do
 		if cat.Key == key then
 			for _, opt in ipairs(cat.Options) do
 				if opt.Id == id then

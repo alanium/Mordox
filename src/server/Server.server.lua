@@ -676,14 +676,27 @@ local function handleAction(player, action, a1, a2)
 		end
 		return
 	end
-	if action == "style" then
-		-- personalización: solo estética, se valida contra la lista y se guarda
-		if type(a1) == "string" and type(a2) == "string" and Config.DefaultStyle[a1] then
-			local opt = Config.StyleOption(a1, a2)
+	if action == "gear" then
+		-- equipo del caballero: solo estética, se valida contra la lista
+		if type(a1) == "string" and type(a2) == "string" and Config.DefaultGear[a1] then
+			local opt = Config.GearOption(a1, a2)
 			if opt and opt.Id == a2 then
-				player:SetAttribute("Sty" .. a1, a2)
+				player:SetAttribute("Gear" .. a1, a2)
 				if f and f.char and not f.dead then
 					applyLook(player, f.char)
+				end
+			end
+		end
+		return
+	end
+	if action == "style" then
+		-- piezas del arma: cada arma guarda las suyas (a1 = "arma:pieza")
+		if type(a1) == "string" and type(a2) == "string" then
+			local weaponId, key = a1:match("^(%w+):(%w+)$")
+			if weaponId and Config.WeaponCustom[weaponId] then
+				local opt = Config.WeaponOption(weaponId, key, a2)
+				if opt and opt.Id == a2 then
+					player:SetAttribute("W" .. weaponId .. "_" .. key, a2)
 				end
 			end
 		end
@@ -859,19 +872,25 @@ pcall(function()
 end)
 
 local function styleOf(player)
-	local t = {}
-	for key, default in pairs(Config.DefaultStyle) do
-		t[key] = player:GetAttribute("Sty" .. key) or default
+	local t = { Weapon = player:GetAttribute("Weapon") or Config.Weapons[1].Id, Gear = {}, Weapons = {} }
+	for key, default in pairs(Config.DefaultGear) do
+		t.Gear[key] = player:GetAttribute("Gear" .. key) or default
 	end
-	t.Weapon = player:GetAttribute("Weapon") or Config.Weapons[1].Id
+	for _, w in ipairs(Config.Weapons) do
+		local parts = {}
+		for key, default in pairs(Config.DefaultWeaponStyle(w.Id)) do
+			parts[key] = player:GetAttribute("W" .. w.Id .. "_" .. key) or default
+		end
+		t.Weapons[w.Id] = parts
+	end
 	return t
 end
 
 local function applyLook(player, char)
-	local sty = styleOf(player)
-	local armorOpt = Config.StyleOption("Armor", sty.Armor)
-	local tabardOpt = Config.StyleOption("Tabard", sty.Tabard)
-	local helmet = sty.Helmet
+	local gear = styleOf(player).Gear
+	local armorOpt = Config.GearOption("Armor", gear.Armor)
+	local tabardOpt = Config.GearOption("Tabard", gear.Tabard)
+	local helmet = gear.Helmet
 	for _, d in ipairs(char:GetChildren()) do
 		if d:IsA("BasePart") then
 			if d.Name == "Tabard" or d.Name == "TabardBack" then
@@ -903,9 +922,19 @@ local function loadStyle(player)
 		return styleStore:GetAsync("p" .. player.UserId)
 	end)
 	if ok and type(saved) == "table" then
-		for key in pairs(Config.DefaultStyle) do
-			if type(saved[key]) == "string" and Config.StyleOption(key, saved[key]).Id == saved[key] then
-				player:SetAttribute("Sty" .. key, saved[key])
+		for key in pairs(Config.DefaultGear) do
+			local id = saved.Gear and saved.Gear[key]
+			if type(id) == "string" and Config.GearOption(key, id).Id == id then
+				player:SetAttribute("Gear" .. key, id)
+			end
+		end
+		for _, w in ipairs(Config.Weapons) do
+			local parts = saved.Weapons and saved.Weapons[w.Id]
+			for key in pairs(Config.DefaultWeaponStyle(w.Id)) do
+				local id = parts and parts[key]
+				if type(id) == "string" and Config.WeaponOption(w.Id, key, id).Id == id then
+					player:SetAttribute("W" .. w.Id .. "_" .. key, id)
+				end
 			end
 		end
 		if type(saved.Weapon) == "string" and Config.Weapon(saved.Weapon).Id == saved.Weapon then
@@ -989,8 +1018,13 @@ Players.PlayerAdded:Connect(function(player)
 		onCharacter(player, char)
 	end)
 	player:SetAttribute("Weapon", Config.Weapons[1].Id)
-	for key, default in pairs(Config.DefaultStyle) do
-		player:SetAttribute("Sty" .. key, default)
+	for key, default in pairs(Config.DefaultGear) do
+		player:SetAttribute("Gear" .. key, default)
+	end
+	for _, w in ipairs(Config.Weapons) do
+		for key, default in pairs(Config.DefaultWeaponStyle(w.Id)) do
+			player:SetAttribute("W" .. w.Id .. "_" .. key, default)
+		end
 	end
 	loadStyle(player) -- lo que haya elegido la última vez
 	spawnPlayer(player)
