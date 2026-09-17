@@ -655,6 +655,10 @@ local function handleAction(player, action, a1, a2)
 		if f and type(a1) == "string" then
 			f.nextWeapon = Config.Weapon(a1)
 			player:SetAttribute("Weapon", f.nextWeapon.Id)
+			if f.char and not f.dead and f.state == "idle" then
+				f.weapon = f.nextWeapon -- si estás quieto la cambiás en el momento
+				setAttr(f)
+			end
 		end
 		return
 	end

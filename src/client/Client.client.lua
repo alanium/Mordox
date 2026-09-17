@@ -1427,7 +1427,14 @@ RunService.RenderStepped:Connect(function(dt)
 		weaponList.Visible = tabs.current == "arma" and not forging
 		local myWeapon = player:GetAttribute("Weapon")
 		for id, b in pairs(weaponButtons) do
-			b.BackgroundColor3 = id == myWeapon and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+			local equipped = id == myWeapon
+			b.BackgroundColor3 = equipped and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+			local tag = b:FindFirstChild("Equipada")
+			if not tag then
+				tag = label({ Name = "Equipada", AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 10), Size = UDim2.new(0, 120, 0, 24),
+					Text = "EQUIPADA", TextColor3 = GOLD, MaxSize = 16, Font = FONT2, TextXAlignment = Enum.TextXAlignment.Right, Parent = b })
+			end
+			tag.Visible = equipped
 		end
 		backButton.Visible = forging
 		for id, b in pairs(tabs.buttons) do
