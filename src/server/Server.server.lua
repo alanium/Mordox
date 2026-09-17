@@ -863,6 +863,7 @@ local function styleOf(player)
 	for key, default in pairs(Config.DefaultStyle) do
 		t[key] = player:GetAttribute("Sty" .. key) or default
 	end
+	t.Weapon = player:GetAttribute("Weapon") or Config.Weapons[1].Id
 	return t
 end
 
@@ -905,6 +906,13 @@ local function loadStyle(player)
 		for key in pairs(Config.DefaultStyle) do
 			if type(saved[key]) == "string" and Config.StyleOption(key, saved[key]).Id == saved[key] then
 				player:SetAttribute("Sty" .. key, saved[key])
+			end
+		end
+		if type(saved.Weapon) == "string" and Config.Weapon(saved.Weapon).Id == saved.Weapon then
+			player:SetAttribute("Weapon", saved.Weapon)
+			local f = fighters[player]
+			if f then
+				f.nextWeapon = Config.Weapon(saved.Weapon)
 			end
 		end
 	end

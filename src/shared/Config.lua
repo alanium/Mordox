@@ -78,6 +78,13 @@ Config.Weapons = {
 		Stab = { Windup = 0.66, Release = 0.34, Recovery = 0.52, Damage = 54, Type = "pierce" },
 		ParryDrain = 18, Color = Color3.fromRGB(205, 210, 220),
 	},
+	{
+		-- más lento y más pesado que el espadón, con el mayor alcance
+		Id = "mandoble", Name = "Mandoble", Kind = "twohand", Length = 4.7, Grip = 1.7, Ricasso = true,
+		Slash = { Windup = 0.88, Release = 0.46, Recovery = 0.68, Damage = 70, Type = "cut" },
+		Stab = { Windup = 0.92, Release = 0.40, Recovery = 0.70, Damage = 72, Type = "pierce" },
+		ParryDrain = 26, Color = Color3.fromRGB(198, 202, 212),
+	},
 }
 
 -- Personalización (solo estética: no cambia daño, alcance ni tiempos)

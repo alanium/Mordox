@@ -289,9 +289,8 @@ local function paintKnight(sty)
 	end
 end
 
-local function refreshPreview(sty)
-	local weapon = Config.Weapons[1]
-	local key = table.concat({ sty.Blade, sty.Guard, sty.Grip, sty.Pommel, sty.Metal }, "|")
+local function refreshPreview(sty, weapon)
+	local key = table.concat({ weapon.Id, sty.Blade, sty.Guard, sty.Grip, sty.Pommel, sty.Metal }, "|")
 	if preview.key ~= key then
 		preview.key = key
 		if preview.weapon then
@@ -345,6 +344,7 @@ local function menuRow(order, title, tab)
 end
 
 -- primera pantalla de la pestaña ARMA: la lista de armas (por ahora solo el espadón)
+local weaponButtons = {}
 local weaponList = new("Frame", { Size = UDim2.new(1, -10, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, LayoutOrder = 0,
 	BackgroundTransparency = 1, Parent = menuList })
 new("UIListLayout", { Padding = UDim.new(0, 8), Parent = weaponList })
@@ -362,6 +362,7 @@ for i, w in ipairs(Config.Weapons) do
 		CombatEvent:FireServer("loadout", w.Id)
 		tabs.weapon = w.Id
 	end)
+	weaponButtons[w.Id] = b
 end
 
 local backButton = new("TextButton", { Size = UDim2.new(0, 220, 0, 34), LayoutOrder = 0, Text = "", AutoButtonColor = true,
@@ -414,10 +415,8 @@ for i, cfg in ipairs({
 end
 
 -- pie: nombre del arma y botón para salir al campo
-label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 34, 1, -24), Size = UDim2.new(0, 500, 0, 30), Font = FONT2, MaxSize = 18,
-	TextColor3 = Color3.fromRGB(205, 195, 180), TextXAlignment = Enum.TextXAlignment.Left,
-	Text = string.format("ESPADÓN · daño %d · alcance %.1f · dos manos", Config.Weapons[1].Slash.Damage, Config.Weapons[1].Length),
-	Parent = loadout })
+local weaponFoot = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 34, 1, -24), Size = UDim2.new(0, 500, 0, 30), Font = FONT2,
+	MaxSize = 18, TextColor3 = Color3.fromRGB(205, 195, 180), TextXAlignment = Enum.TextXAlignment.Left, Text = "", Parent = loadout })
 local spawnButton = new("TextButton", { AnchorPoint = Vector2.new(1, 1), Position = UDim2.new(1, -34, 1, -20), Size = UDim2.new(0, 320, 0, 52),
 	Text = "", AutoButtonColor = true, BackgroundColor3 = Color3.fromRGB(120, 80, 30), Parent = loadout })
 corner(8, spawnButton)
@@ -467,6 +466,7 @@ function buildWeapon(w, sty, parent)
 	end
 
 	-- hoja: cuerpo, punta y (según el tipo) canal central u ondas
+	local wide = w.Ricasso and 1.25 or 1 -- el mandoble es más ancho y pesado
 	local bladeLen = L - 0.35
 	local bodyLen = bladeLen - 0.7
 	if blade.Wave then
@@ -480,9 +480,16 @@ function buildWeapon(w, sty, parent)
 				CFrame.Angles(side * 0.09, 0, 0))
 		end
 	else
-		add(Vector3.new(blade.Thick, blade.Width, bodyLen), steel, Vector3.new(0, 0, -0.35 - bodyLen / 2))
+		add(Vector3.new(blade.Thick * wide, blade.Width * wide, bodyLen), steel, Vector3.new(0, 0, -0.35 - bodyLen / 2))
 	end
-	add(Vector3.new(blade.Thick * 0.9, blade.Width * blade.Tip, 0.7), steel, Vector3.new(0, 0, -0.35 - bodyLen - 0.35))
+	add(Vector3.new(blade.Thick * 0.9 * wide, blade.Width * blade.Tip * wide, 0.7), steel, Vector3.new(0, 0, -0.35 - bodyLen - 0.35))
+	if w.Ricasso then
+		-- ricasso con ganchos: el tramo sin filo arriba de la guarda para agarrar la hoja
+		add(Vector3.new(blade.Thick * 1.1, blade.Width * 0.8, 0.9), dark, Vector3.new(0, 0, -0.9), Enum.Material.Leather)
+		for _, side in ipairs({ -1, 1 }) do
+			add(Vector3.new(0.1, 0.5, 0.14), dark, Vector3.new(0, side * blade.Width * 0.7, -1.35), nil, nil, CFrame.Angles(side * 0.6, 0, 0))
+		end
+	end
 	if blade.Fuller then
 		add(Vector3.new(blade.Thick + 0.02, blade.Width * 0.3, bodyLen * 0.8), dark, Vector3.new(0, 0, -0.35 - bodyLen / 2))
 	end
@@ -516,7 +523,7 @@ function buildWeapon(w, sty, parent)
 
 	-- empuñadura
 	local gripMat = Enum.Material[grip.Material] or Enum.Material.Leather
-	add(Vector3.new(0.14, 0.14, G + 0.3), grip.Color, Vector3.new(0, 0, (G + 0.3) / 2 - 0.25), gripMat)
+	add(Vector3.new(0.14 * wide, 0.14 * wide, G + 0.3), grip.Color, Vector3.new(0, 0, (G + 0.3) / 2 - 0.25), gripMat)
 	if grip.Rings then
 		for i = 1, 4 do
 			add(Vector3.new(0.17, 0.17, 0.05), grip.Color, Vector3.new(0, 0, -0.1 + i * (G / 4.5)), gripMat)
@@ -1351,6 +1358,10 @@ RunService.RenderStepped:Connect(function(dt)
 			r.row.Visible = r.tab == tabs.current and (r.tab ~= "arma" or forging)
 		end
 		weaponList.Visible = tabs.current == "arma" and not forging
+		local myWeapon = player:GetAttribute("Weapon")
+		for id, b in pairs(weaponButtons) do
+			b.BackgroundColor3 = id == myWeapon and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
+		end
 		backButton.Visible = forging
 		for id, b in pairs(tabs.buttons) do
 			b.BackgroundColor3 = id == tabs.current and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(45, 37, 30)
@@ -1360,7 +1371,10 @@ RunService.RenderStepped:Connect(function(dt)
 		emptyView.Visible = not swordVp.Visible and not knightVp.Visible
 		emptyView.Text = tabs.current == "ajustes" and "Ajustes del juego" or "Elegí un arma para verla y forjarla"
 		if forging or tabs.current == "equipo" then
-			refreshPreview(sty)
+			local shown = Config.Weapon(tabs.weapon or player:GetAttribute("Weapon"))
+			refreshPreview(sty, shown)
+			weaponFoot.Text = string.format("%s · daño %d al tajo · alcance %.1f · carga %.2f s", shown.Name:upper(), shown.Slash.Damage,
+				shown.Length, shown.Slash.Windup)
 		end
 		if preview.weapon then
 			local turn = CFrame.Angles(0, swordView.yaw, 0) * CFrame.Angles(swordView.pitch, 0, 0)
