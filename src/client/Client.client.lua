@@ -476,7 +476,7 @@ local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.ne
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · G: soltar o levantar el arma · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
 local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
 	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
@@ -786,6 +786,11 @@ local function animateKnight(char, t, dt)
 	if not k or hum.Health <= 0 or not (k.rArm and k.lArm) then
 		return
 	end
+	if char:GetAttribute("Unarmed") then
+		destroyWeapon(k.weapon)
+		k.weapon, k.weaponId = nil, nil
+		return
+	end
 	local weapon = Config.Weapon(char:GetAttribute("Weapon") or "espadon")
 	local sty = weaponStyleOf(char, weapon.Id)
 	local parts = { weapon.Id }
@@ -971,6 +976,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		CombatEvent:FireServer("feint")
 	elseif input.KeyCode == Enum.KeyCode.F then
 		CombatEvent:FireServer("kick")
+	elseif input.KeyCode == Enum.KeyCode.G then
+		CombatEvent:FireServer("drop")
 	elseif input.KeyCode == Enum.KeyCode.LeftShift then
 		CombatEvent:FireServer("sprint", true)
 	elseif input.KeyCode == Enum.KeyCode.V then
@@ -1172,6 +1179,8 @@ FxEvent.OnClientEvent:Connect(function(kind, a, b, c, d, e, g)
 		showTech("COMBO", b, nil)
 	elseif kind == "feint" then
 		showTech(c or "FINTA", b, nil)
+	elseif kind == "drop" or kind == "pickup" then
+		sound(pick(SOUNDS.disarm), a, 0.8)
 	elseif kind == "death" then
 		sound(pick(SOUNDS.death), a, 1)
 	elseif kind == "disarm" then
@@ -1237,11 +1246,45 @@ RunService.Stepped:Connect(function(_, dt)
 	end
 end)
 
+-- armas tiradas en el piso: cada pieza física lleva su modelo dibujado encima
+local droppedViews = {}
+
+local function updateDropped()
+	local folder = workspace:FindFirstChild("MordoxDropped")
+	local alive = {}
+	for _, part in ipairs(folder and folder:GetChildren() or {}) do
+		if part:IsA("BasePart") then
+			alive[part] = true
+			local view = droppedViews[part]
+			local id = part:GetAttribute("Weapon") or "espadon"
+			if not view then
+				local w = Config.Weapon(id)
+				local sty = {}
+				for key in pairs(Config.DefaultWeaponStyle(w.Id)) do
+					sty[key] = part:GetAttribute(key)
+				end
+				view = { model = buildWeapon(w, sty), weapon = w }
+				droppedViews[part] = view
+			end
+			-- la pieza física es el eje del arma: la empuñadura queda en un extremo
+			local w = view.weapon
+			placeParts(view.model.parts, part.CFrame * CFrame.new(0, 0, (w.Length + w.Grip) / 2 - w.Grip))
+		end
+	end
+	for part, view in pairs(droppedViews) do
+		if not alive[part] then
+			destroyWeapon(view.model)
+			droppedViews[part] = nil
+		end
+	end
+end
+
 -- primera persona: mostrar brazos propios (después de que la cámara de Roblox oculta el cuerpo)
 RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	local char = player.Character
 	local k = char and knights[char]
 	local hrp = char and char:FindFirstChild("HumanoidRootPart")
+	updateDropped()
 	-- el arma propia se dibuja con la cámara de este mismo cuadro: el drag y el accel se ven al instante
 	if k and hrp and k.weapon and k.weaponDef then
 		local look = camera.CFrame.LookVector
@@ -1381,8 +1424,9 @@ RunService.RenderStepped:Connect(function(dt)
 	arrow.Rotation = angle
 	local st = char and char:GetAttribute("St") or ""
 	local combo = char and char:GetAttribute("Combo") or 0
+	local unarmed = char and char:GetAttribute("Unarmed")
 	local riposteOpen = st == "riposte" or (st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0))
-	stateText.Text = riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
+	stateText.Text = unarmed and "SIN ARMA · G para levantar una del piso" or riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
 	if dead and not wasDead then

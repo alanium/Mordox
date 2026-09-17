@@ -351,11 +351,14 @@ local function facing(defender, attacker)
 	return dhrp.CFrame.LookVector:Dot(to.Unit)
 end
 
+local dropWeapon, pickUpWeapon -- se definen más abajo (las usa la muerte y el desarme)
+
 local function killed(victim, killer, weaponName)
 	if victim.dead then
 		return
 	end
 	victim.dead = true
+	dropWeapon(victim, false) -- se te cae donde caíste
 	setState(victim, "dead")
 	local vs = victim.player:FindFirstChild("leaderstats")
 	if vs then
@@ -412,8 +415,89 @@ local function bounce(f)
 	startPhase(f, "recovery", Config.Combat.BounceRecovery)
 end
 
+-- Armas en el piso: una pieza física con los datos del arma; cada cliente le dibuja el modelo encima
+local droppedFolder = Instance.new("Folder")
+droppedFolder.Name = "MordoxDropped"
+droppedFolder.Parent = workspace
+
+function dropWeapon(f, throw)
+    if f.unarmed or not f.char or not f.weapon then
+        return
+    end
+    local hrp = f.char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return
+    end
+    local w = f.weapon
+    local part = Instance.new("Part")
+    part.Name = "Dropped"
+    part.Size = Vector3.new(0.3, 0.3, w.Length + w.Grip)
+    part.Color = w.Color
+    part.Material = Enum.Material.Metal
+    part.CanCollide = true
+    part.CFrame = hrp.CFrame * CFrame.new(0, 0.5, -2) * CFrame.Angles(math.rad(70), 0, 0)
+    part.Transparency = 1 -- el modelo lo dibuja el cliente encima
+    part:SetAttribute("Weapon", w.Id)
+    if f.player:IsA("Player") then
+        for key in pairs(Config.DefaultWeaponStyle(w.Id)) do
+            part:SetAttribute(key, f.player:GetAttribute("W" .. w.Id .. "_" .. key))
+        end
+    end
+    part.Parent = droppedFolder
+    -- sale volando y girando, después queda tirada donde cae
+    local look = hrp.CFrame.LookVector
+    part.AssemblyLinearVelocity = look * (throw and 34 or 14) + Vector3.new(0, 12, 0)
+    part.AssemblyAngularVelocity = Vector3.new(math.random(-14, 14), math.random(-8, 8), math.random(-14, 14))
+    f.unarmed = true
+    f.char:SetAttribute("Unarmed", true)
+    if f.state == "attack" or f.state == "block" or f.state == "parry" then
+        toIdle(f)
+    end
+    FxEvent:FireAllClients("drop", part.Position)
+    return part
+end
+
+function pickUpWeapon(f)
+    if not f.char then
+        return false
+    end
+    local hrp = f.char:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        return false
+    end
+    local best, bestDist
+    for _, part in ipairs(droppedFolder:GetChildren()) do
+        local d = (part.Position - hrp.Position).Magnitude
+        if d <= 9 and (not bestDist or d < bestDist) then
+            best, bestDist = part, d
+        end
+    end
+    if not best then
+        return false
+    end
+    local id = best:GetAttribute("Weapon")
+    f.weapon = Config.Weapon(id)
+    f.nextWeapon = f.weapon
+    if f.player:IsA("Player") then
+        f.player:SetAttribute("Weapon", f.weapon.Id)
+        for key in pairs(Config.DefaultWeaponStyle(f.weapon.Id)) do
+            local v = best:GetAttribute(key)
+            if type(v) == "string" then
+                f.player:SetAttribute("W" .. f.weapon.Id .. "_" .. key, v)
+            end
+        end
+    end
+    f.unarmed = false
+    f.char:SetAttribute("Unarmed", false)
+    setAttr(f)
+    best:Destroy()
+    FxEvent:FireAllClients("pickup", hrp.Position)
+    return true
+end
+
 local function disarm(f)
 	setState(f, "disarmed", Config.Stamina.DisarmTime)
+	dropWeapon(f, true) -- el arma sale despedida
 	FxEvent:FireAllClients("disarm", f.char.HumanoidRootPart.Position)
 end
 
@@ -646,7 +730,8 @@ end)
 
 -- entradas del cliente
 local function canAct(f)
-	return f and not f.dead and f.char and f.char.Parent and f.state ~= "stun" and f.state ~= "guardbroken" and f.state ~= "disarmed"
+	return f and not f.dead and f.char and f.char.Parent and not f.unarmed and f.state ~= "stun" and f.state ~= "guardbroken"
+		and f.state ~= "disarmed"
 end
 
 local function handleAction(player, action, a1, a2)
@@ -677,6 +762,17 @@ local function handleAction(player, action, a1, a2)
 		if f and f.dead and now() >= (f.canSpawnAt or 0) then
 			f.wantSpawn = nil
 			spawnPlayer(player)
+		end
+		return
+	end
+	if action == "drop" then
+		-- G: si estás sin arma intenta levantar la que tengas cerca; si no, tirás la tuya
+		if f and not f.dead and f.char then
+			if f.unarmed then
+				pickUpWeapon(f)
+			elseif f.state ~= "attack" then
+				dropWeapon(f, false)
+			end
 		end
 		return
 	end
@@ -967,6 +1063,8 @@ local function onCharacter(player, char)
 	f.hum = char:WaitForChild("Humanoid")
 	f.dead = false
 	f.weapon = f.nextWeapon or f.weapon
+	f.unarmed = false
+	char:SetAttribute("Unarmed", false)
 	f.stamina = Config.Stamina.Max
 	f.hum.UseJumpPower = true
 	f.hum.JumpPower = 50 / TS()
