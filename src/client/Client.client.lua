@@ -114,6 +114,13 @@ corner(2, arrow)
 local opts = { fov = 90, volume = 0.8, sens = 1 } -- ajustes de la armería (M)
 local buildWeapon, placeParts -- se definen más abajo, la armería los usa para la vista previa
 local menuOpen, wasDead = false, false
+local freeCam = { on = false, look = nil }
+
+-- hacia dónde mira el caballero: la cámara, salvo en vista libre (ahí queda congelado)
+local function aimLook()
+	return freeCam.on and freeCam.look or camera.CFrame.LookVector
+end
+
 local toast = { text = "", untilT = 0 }
 local stateText = label({ AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0.5, 30), Size = UDim2.new(0, 300, 0, 26),
 	Text = "", TextColor3 = GOLD, MaxSize = 22, Parent = gui })
@@ -493,7 +500,7 @@ local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.ne
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · G: soltar o levantar el arma · Shift: correr · V: cámara · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · G: soltar o levantar el arma · Shift: correr · V: cámara · C: vista libre · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
 local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
 	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
@@ -829,7 +836,7 @@ local function animateKnight(char, t, dt)
 	local pitch = isLocal and k.localPitch or (char:GetAttribute("Pitch") or 0)
 	local body = hrp.CFrame
 	if isLocal then
-		local look = camera.CFrame.LookVector
+		local look = aimLook()
 		body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
 	end
 	local base, tip, dir, edge = Swing.WorldPose(body, pitch, weapon, st)
@@ -907,6 +914,17 @@ end
 ---------------------------------------------------------------------------
 local firstPerson = true
 local function applyCameraMode()
+	if freeCam.on then
+		player.CameraMode = Enum.CameraMode.Classic
+		player.CameraMinZoomDistance = 4
+		player.CameraMaxZoomDistance = 30
+		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.CameraOffset = Vector3.new(0, 0.5, 0) -- la cámara orbita el centro del cuerpo
+			hum.AutoRotate = false
+		end
+		return
+	end
 	if firstPerson then
 		player.CameraMode = Enum.CameraMode.LockFirstPerson
 	else
@@ -954,7 +972,7 @@ local function predictAttack(kind, angle)
 end
 
 local function attack(kind, angle)
-	if loadout.Visible then
+	if loadout.Visible or freeCam.on then
 		return -- con la armería abierta no se pelea
 	end
 	predictAttack(kind, angle)
@@ -967,7 +985,7 @@ UserInputService.InputChanged:Connect(function(input)
 		if d.Magnitude > 0.5 then
 			mouseDir = mouseDir * 0.75 + d.Unit * 0.25
 		end
-	elseif input.UserInputType == Enum.UserInputType.MouseWheel and not loadout.Visible then
+	elseif input.UserInputType == Enum.UserInputType.MouseWheel and not loadout.Visible and not freeCam.on then
 		if input.Position.Z > 0 then
 			attack("stab", 0)
 		else
@@ -1002,6 +1020,11 @@ UserInputService.InputBegan:Connect(function(input, processed)
 		CombatEvent:FireServer("sprint", true)
 	elseif input.KeyCode == Enum.KeyCode.V then
 		firstPerson = not firstPerson
+		applyCameraMode()
+	elseif input.KeyCode == Enum.KeyCode.C then
+		-- vista libre para mirar tu caballero desde cualquier lado
+		freeCam.on = not freeCam.on
+		freeCam.look = camera.CFrame.LookVector
 		applyCameraMode()
 	elseif input.KeyCode == Enum.KeyCode.Tab then
 		refreshBoard()
@@ -1307,7 +1330,7 @@ RunService:BindToRenderStep("MordoxArms", Enum.RenderPriority.Camera.Value + 1, 
 	updateDropped()
 	-- el arma propia se dibuja con la cámara de este mismo cuadro: el drag y el accel se ven al instante
 	if k and hrp and k.weapon and k.weaponDef then
-		local look = camera.CFrame.LookVector
+		local look = aimLook()
 		local body = CFrame.new(hrp.Position) * CFrame.Angles(0, math.atan2(-look.X, -look.Z), 0)
 		local pitch = math.deg(math.asin(math.clamp(look.Y, -1, 1)))
 		local st = poseState(readState(char), k.weaponDef, serverNow())
@@ -1341,7 +1364,7 @@ RunService.RenderStepped:Connect(function(dt)
 	UserInputService.MouseIconEnabled = loadout.Visible -- el puntero solo aparece para elegir arma
 
 	-- tercera persona: el cuerpo mira hacia donde apunta la cámara
-	if hrp and hum and not firstPerson and hum.Health > 0 then
+	if hrp and hum and not firstPerson and not freeCam.on and hum.Health > 0 then
 		local look = camera.CFrame.LookVector * Vector3.new(1, 0, 1)
 		if look.Magnitude > 0.1 then
 			hrp.CFrame = CFrame.lookAt(hrp.Position, hrp.Position + look.Unit)
@@ -1351,13 +1374,13 @@ RunService.RenderStepped:Connect(function(dt)
 	-- mirada vertical (para inclinar los golpes)
 	if char then
 		local k = knights[char]
-		local pitch = math.deg(math.asin(math.clamp(camera.CFrame.LookVector.Y, -1, 1)))
+		local pitch = math.deg(math.asin(math.clamp(aimLook().Y, -1, 1)))
 		if k then
 			k.localPitch = pitch
 		end
 		if os.clock() - lastPitchSent > 1 / 30 then
 			lastPitchSent = os.clock()
-			local look = camera.CFrame.LookVector
+			local look = aimLook()
 			LookEvent:FireServer(math.atan2(-look.X, -look.Z), pitch)
 		end
 	end
@@ -1446,7 +1469,8 @@ RunService.RenderStepped:Connect(function(dt)
 	local combo = char and char:GetAttribute("Combo") or 0
 	local unarmed = char and char:GetAttribute("Unarmed")
 	local riposteOpen = st == "riposte" or (st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0))
-	stateText.Text = unarmed and "SIN ARMA · G para levantar una del piso" or riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
+	stateText.Text = freeCam.on and "VISTA LIBRE · mové el mouse para girar · rueda para acercar · C para volver"
+		or unarmed and "SIN ARMA · G para levantar una del piso" or riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
 	if dead and not wasDead then
