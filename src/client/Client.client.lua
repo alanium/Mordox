@@ -744,6 +744,9 @@ local function knightData(char)
 		lLeg = limbInfo(char, "Left", "UpperLeg", "LowerLeg", "Foot", "Hip", "Knee", "Ankle"),
 		walk = 0,
 	}
+	if not (k.rArm and k.lArm and k.rLeg and k.lLeg) then
+		return nil -- el cuerpo todavía está llegando (articulaciones sin replicar): se vuelve a intentar el próximo cuadro
+	end
 	knights[char] = k
 	return k
 end

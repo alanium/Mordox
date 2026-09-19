@@ -352,6 +352,7 @@ local function facing(defender, attacker)
 end
 
 local dropWeapon, pickUpWeapon -- se definen más abajo (las usa la muerte y el desarme)
+local spawnPlayer -- se define más abajo (la usa el botón de salir al campo)
 
 local function killed(victim, killer, weaponName)
 	if victim.dead then
@@ -949,7 +950,7 @@ local function pickSpawn()
 	return best
 end
 
-local function spawnPlayer(player)
+function spawnPlayer(player)
 	local f = fighters[player]
 	if not f or not player.Parent or matchInfo:GetAttribute("Phase") == "intermission" and f.char then
 		return
