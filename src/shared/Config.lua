@@ -159,13 +159,25 @@ Config.WeaponCustom = {
 	},
 }
 
--- Equipo del caballero (común a todas las armas)
+-- Equipo del caballero (común a todas las armas): tres piezas de armadura sobre tu avatar, del 0 (nada) al 3 (placas)
 Config.GearCustom = {
-	{ Key = "Helmet", Name = "Casco", Options = {
-		{ Id = "yelmo", Name = "Yelmo con cresta" },
-		{ Id = "bacinete", Name = "Bacinete" },
-		{ Id = "capucha", Name = "Capucha de malla" },
-		{ Id = "sin", Name = "Sin casco" },
+	{ Key = "Head", Name = "Cabeza", Armor = true, Options = {
+		{ Id = "sin", Name = "Sin casco", Tier = 0 },
+		{ Id = "cofia", Name = "Cofia de malla", Tier = 1 },
+		{ Id = "bacinete", Name = "Bacinete abierto", Tier = 2 },
+		{ Id = "yelmo", Name = "Yelmo cerrado", Tier = 3 },
+	} },
+	{ Key = "Chest", Name = "Torso", Armor = true, Options = {
+		{ Id = "sin", Name = "Sin armadura", Tier = 0 },
+		{ Id = "gambeson", Name = "Gambesón", Tier = 1 },
+		{ Id = "malla", Name = "Cota de malla", Tier = 2 },
+		{ Id = "placas", Name = "Placas", Tier = 3 },
+	} },
+	{ Key = "Legs", Name = "Piernas", Armor = true, Options = {
+		{ Id = "sin", Name = "Sin protección", Tier = 0 },
+		{ Id = "calzas", Name = "Calzas acolchadas", Tier = 1 },
+		{ Id = "malla", Name = "Malla", Tier = 2 },
+		{ Id = "grebas", Name = "Grebas de placa", Tier = 3 },
 	} },
 	{ Key = "Armor", Name = "Color de armadura", Options = {
 		{ Id = "acero", Name = "Acero", Color = Color3.fromRGB(165, 170, 180), Dark = Color3.fromRGB(95, 98, 105) },
@@ -183,7 +195,17 @@ Config.GearCustom = {
 	} },
 }
 
-Config.DefaultGear = { Helmet = "yelmo", Armor = "acero", Tabard = "rojo" }
+Config.DefaultGear = { Head = "bacinete", Chest = "malla", Legs = "malla", Armor = "acero", Tabard = "rojo" }
+
+-- Lo que pasa de daño según el nivel de la pieza que cubre la zona golpeada (0 = nada, 3 = placas)
+Config.ArmorTier = {
+	[0] = { Damage = 1.0 },
+	[1] = { Damage = 0.85 },
+	[2] = { Damage = 0.72 },
+	[3] = { Damage = 0.6 },
+}
+-- Velocidad que se pierde por cada nivel de cada pieza (placas completas = 21% más lento)
+Config.ArmorWeight = { Head = 0.01, Chest = 0.035, Legs = 0.025 }
 
 -- La primera opción de cada categoría es lo que trae el arma de fábrica
 function Config.DefaultWeaponStyle(weaponId)

@@ -8,6 +8,9 @@
       },
       "Swing": {
         "$path": "src/shared/Swing.lua"
+      },
+      "MordoxArmor": {
+        "$path": "src/shared/Armor.lua"
       }
     },
     "ServerScriptService": {

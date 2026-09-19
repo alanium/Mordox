@@ -12,6 +12,7 @@ local Debris = game:GetService("Debris")
 
 local Config = require(ReplicatedStorage:WaitForChild("MordoxConfig"))
 local Swing = require(ReplicatedStorage:WaitForChild("Swing"))
+local Armor = require(ReplicatedStorage:WaitForChild("MordoxArmor"))
 local remotes = ReplicatedStorage:WaitForChild("MordoxRemotes")
 local CombatEvent = remotes:WaitForChild("Combat")
 local FxEvent = remotes:WaitForChild("Fx")
@@ -231,71 +232,86 @@ local knightVp, knightWorld, knightCam, knightView = viewport(UDim2.new(0, 34, 0
 swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
 knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
 
+local armorStats = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 34, 1, -54), Size = UDim2.new(0, 740, 0, 26), Font = FONT2,
+	MaxSize = 17, TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Left, Text = "", Visible = false, Parent = loadout })
 local emptyView = label({ Position = UDim2.new(0, 34, 0, 80), Size = UDim2.new(0, 740, 1, -160), Font = FONT2, MaxSize = 20,
 	TextColor3 = Color3.fromRGB(150, 140, 125), TextWrapped = true, Text = "", Parent = loadout })
 
 local preview = { weapon = nil, key = "", knight = nil, knightKey = "" }
 
--- caballero de la armería: se arma con bloques propios, siempre en pose de descanso
-local knightParts = {}
+-- caballero de la armería: tu propio avatar en pose de descanso, con la armadura que elegís encima
+local avatarPreview = { model = nil, key = "" }
 
-local function knightPart(name, size, pos, color, material)
-	pos = pos - Vector3.new(0, 0.9, 0) -- el cuerpo queda centrado en el origen (ahí gira y apunta la cámara)
-	local part = new("Part", { Name = name, Size = size, CFrame = CFrame.new(pos), Color = color, Material = material or Enum.Material.Metal,
-		Anchored = true, CanCollide = false, CanQuery = false, TopSurface = Enum.SurfaceType.Smooth,
-		BottomSurface = Enum.SurfaceType.Smooth, Parent = knightWorld })
-	table.insert(knightParts, { part = part, role = name, home = CFrame.new(pos) })
-	return part
-end
-
-local function buildPreviewKnight()
-	if #knightParts > 0 then
+-- pone el muñeco en la pose de reposo del esqueleto, parado en el origen
+local function restPose(model)
+	local root = model:FindFirstChild("HumanoidRootPart")
+	if not root then
 		return
 	end
-	local steel, dark = Color3.fromRGB(165, 170, 180), Color3.fromRGB(95, 98, 105)
-	local leather = Color3.fromRGB(70, 45, 25)
-	knightPart("Torso", Vector3.new(2, 2, 1.1), Vector3.new(0, 1.1, 0), steel)
-	knightPart("Tabard", Vector3.new(1, 2.3, 0.1), Vector3.new(0, 0.75, -0.62), steel, Enum.Material.Fabric)
-	knightPart("TabardBack", Vector3.new(1, 2.2, 0.1), Vector3.new(0, 0.8, 0.62), steel, Enum.Material.Fabric)
-	knightPart("Belt", Vector3.new(2.1, 0.35, 1.2), Vector3.new(0, 0.15, 0), leather, Enum.Material.Leather)
-	knightPart("Head", Vector3.new(1.1, 1.1, 1.1), Vector3.new(0, 2.75, 0), dark)
-	knightPart("Helmet", Vector3.new(1.25, 1.2, 1.25), Vector3.new(0, 2.85, 0), steel)
-	knightPart("Visor", Vector3.new(1.05, 0.14, 0.1), Vector3.new(0, 2.85, -0.63), Color3.new(0.04, 0.04, 0.04), Enum.Material.SmoothPlastic)
-	knightPart("Crest", Vector3.new(0.18, 0.4, 1.1), Vector3.new(0, 3.6, 0), steel)
-	for _, side in ipairs({ -1, 1 }) do
-		knightPart("Arm", Vector3.new(0.75, 1.9, 0.8), Vector3.new(side * 1.4, 1.1, 0), steel)
-		knightPart("Pauldron", Vector3.new(1.1, 0.5, 1.05), Vector3.new(side * 1.45, 2.05, 0), steel)
-		knightPart("Gauntlet", Vector3.new(0.8, 0.5, 0.85), Vector3.new(side * 1.4, 0.1, 0), dark)
-		knightPart("Leg", Vector3.new(0.85, 2, 0.9), Vector3.new(side * 0.5, -1, 0), steel)
-		knightPart("Greave", Vector3.new(0.92, 1, 0.97), Vector3.new(side * 0.5, -1.5, 0), dark)
+	root.CFrame = CFrame.new()
+	local done = { [root] = true }
+	for _ = 1, 8 do
+		for _, m in ipairs(model:GetDescendants()) do
+			if m:IsA("Motor6D") and m.Part0 and m.Part1 and done[m.Part0] and not done[m.Part1] then
+				m.Part1.CFrame = m.Part0.CFrame * m.C0 * m.C1:Inverse()
+				done[m.Part1] = true
+			end
+		end
+	end
+	-- accesorios (pelo, sombreros) encima de su parte
+	for _, acc in ipairs(model:GetChildren()) do
+		if acc:IsA("Accessory") then
+			local handle = acc:FindFirstChild("Handle")
+			local att = handle and handle:FindFirstChildWhichIsA("Attachment")
+			local target = att and model:FindFirstChild(att.Name, true)
+			if target and target ~= att and target.Parent:IsA("BasePart") then
+				handle.CFrame = target.WorldCFrame * att.CFrame:Inverse()
+			end
+		end
 	end
 end
 
--- pinta el caballero de la armería con lo que elegiste
-local function paintKnight(gear)
-	local armorOpt = Config.GearOption("Armor", gear.Armor)
-	local tabardOpt = Config.GearOption("Tabard", gear.Tabard)
-	local helmet = gear.Helmet
-	for _, e in ipairs(knightParts) do
-		local part, role = e.part, e.role
-		if role == "Tabard" or role == "TabardBack" then
-			part.Color = tabardOpt.Color
-		elseif role == "Torso" or role == "Arm" or role == "Pauldron" or role == "Leg" then
-			part.Color = armorOpt.Color
-		elseif role == "Greave" or role == "Gauntlet" then
-			part.Color = armorOpt.Dark
-		elseif role == "Helmet" then
-			part.Color = helmet == "capucha" and Color3.fromRGB(70, 72, 78) or armorOpt.Color
-			part.Material = helmet == "capucha" and Enum.Material.DiamondPlate or Enum.Material.Metal
-			part.Transparency = helmet == "sin" and 1 or 0
-			part.Size = helmet == "bacinete" and Vector3.new(1.2, 1.35, 1.3) or Vector3.new(1.25, 1.2, 1.25)
-		elseif role == "Visor" then
-			part.Transparency = (helmet == "sin" or helmet == "capucha") and 1 or 0
-		elseif role == "Crest" then
-			part.Color = tabardOpt.Color
-			part.Transparency = helmet == "yelmo" and 0 or 1
+local function buildAvatarPreview()
+	if avatarPreview.model then
+		return avatarPreview.model
+	end
+	local folder = ReplicatedStorage:FindFirstChild("MordoxPreviews")
+	local src = folder and folder:FindFirstChild(tostring(player.UserId))
+	if not src then
+		return nil -- el servidor todavía no terminó de armar tu avatar
+	end
+	local model = src:Clone()
+	restPose(model)
+	for _, d in ipairs(model:GetDescendants()) do
+		if d:IsA("BasePart") then
+			d.Anchored = true
+			d.CanCollide = false
+		elseif d:IsA("Script") or d:IsA("LocalScript") then
+			d:Destroy()
 		end
 	end
+	local hum = model:FindFirstChildOfClass("Humanoid")
+	if hum then
+		hum.DisplayDistanceType = Enum.HumanoidDisplayDistanceType.None
+	end
+	model.PrimaryPart = model:FindFirstChild("HumanoidRootPart")
+	model.Parent = knightWorld
+	avatarPreview.model = model
+	-- el centro del cuerpo para girarlo y encuadrarlo
+	local box, size = model:GetBoundingBox()
+	avatarPreview.center = box.Position
+	knightView.dist = math.max(size.Y, 5) * 1.25 / (2 * math.tan(math.rad(13)))
+	return model
+end
+
+-- protección y peso de lo que tenés puesto, para mostrarlo en la armería
+local function armorSummary(gear)
+	local fx = Armor.effects(gear)
+	local function pct(mul)
+		return math.floor((1 - mul) * 100 + 0.5)
+	end
+	return string.format("Protección · cabeza %d%% · torso %d%% · piernas %d%%      Velocidad %d%%",
+		pct(fx.head), pct(fx.torso), pct(fx.legs), math.floor(fx.speed * 100 + 0.5))
 end
 
 local function refreshPreview(gear, weapon, sty)
@@ -319,13 +335,13 @@ local function refreshPreview(gear, weapon, sty)
 		swordView.dist = longest / (2 * math.tan(math.rad(16)))
 		swordView.offset = (weapon.Grip + 0.25 - weapon.Length) / 2 -- centro del arma en el eje de la hoja
 	end
-	local kkey = table.concat({ gear.Helmet, gear.Armor, gear.Tabard }, "|")
-	buildPreviewKnight()
-	if preview.knightKey ~= kkey then
-		preview.knightKey = kkey
-		paintKnight(gear)
+	local kkey = table.concat({ gear.Head, gear.Chest, gear.Legs, gear.Armor, gear.Tabard }, "|")
+	local model = buildAvatarPreview()
+	if model and avatarPreview.key ~= kkey then
+		avatarPreview.key = kkey
+		model:PivotTo(CFrame.new()) -- la armadura se arma con el muñeco derecho y después gira con él
+		Armor.apply(model, gear, true)
 	end
-	knightView.dist = 9 / (2 * math.tan(math.rad(13))) -- con aire arriba y abajo
 end
 
 -- columna derecha: piezas del arma, caballero y ajustes
@@ -1499,13 +1515,14 @@ RunService.RenderStepped:Connect(function(dt)
 			placeParts(preview.weapon.parts, turn * CFrame.new(0, swordView.offset or 0, 0) * CFrame.Angles(math.rad(90), 0, 0))
 			swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, swordView.dist * swordView.zoom), Vector3.new())
 		end
-		if knightVp.Visible then
+		if knightVp.Visible and avatarPreview.model then
 			local turn = CFrame.Angles(0, knightView.yaw, 0) * CFrame.Angles(knightView.pitch * 0.35, 0, 0)
-			for _, e in ipairs(knightParts) do
-				e.part.CFrame = turn * e.home
-			end
+			local c = avatarPreview.center or Vector3.new()
+			avatarPreview.model:PivotTo(turn * CFrame.new(-c)) -- gira sobre el centro del cuerpo
 			knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, knightView.dist * knightView.zoom), Vector3.new())
 		end
+		armorStats.Visible = tabs.current == "equipo"
+		armorStats.Text = armorSummary(gear)
 		local wait = (char and char:GetAttribute("CanSpawnAt") or 0) - serverNow()
 		local ready = not dead or wait <= 0
 		spawnButton.BackgroundColor3 = ready and Color3.fromRGB(120, 80, 30) or Color3.fromRGB(60, 52, 44)

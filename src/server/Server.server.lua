@@ -10,6 +10,7 @@ local StarterPlayer = game:GetService("StarterPlayer")
 
 local Config = require(ReplicatedStorage:WaitForChild("MordoxConfig"))
 local Swing = require(ReplicatedStorage:WaitForChild("Swing"))
+local Armor = require(ReplicatedStorage:WaitForChild("MordoxArmor"))
 
 Players.CharacterAutoLoads = false
 
@@ -43,6 +44,11 @@ local function TS()
 	return matchInfo:GetAttribute("TimeScale") or 1
 end
 matchInfo:SetAttribute("TimeScale", 1)
+
+-- velocidad de movimiento: la base, por el peso de la armadura, y en cámara lenta
+local function speed(f, base)
+	return base * (f.speedMul or 1) / TS()
+end
 
 ---------------------------------------------------------------------------
 -- Mapa: patio de castillo
@@ -165,71 +171,65 @@ for i = 1, 16 do
 end
 
 ---------------------------------------------------------------------------
--- Caballero (StarterCharacter)
+-- Caballero: tu propio avatar (R15) con la armadura elegida encima
 ---------------------------------------------------------------------------
-local STEEL = Color3.fromRGB(150, 152, 160)
-local DARK_STEEL = Color3.fromRGB(70, 72, 80)
+local descriptions = {} -- [userId] = HumanoidDescription (se pide una sola vez)
 
-local function buildKnight()
-	local desc = Instance.new("HumanoidDescription")
-	local rig = Players:CreateHumanoidModelFromDescription(desc, Enum.HumanoidRigType.R15)
-	rig.Name = "StarterCharacter"
-	local animate = rig:FindFirstChild("Animate")
-	if animate then
-		animate:Destroy() -- brazos y piernas se animan por código en el cliente
+local function descriptionFor(userId)
+	if descriptions[userId] then
+		return descriptions[userId]
 	end
+	local desc
+	if userId and userId > 0 then
+		pcall(function()
+			desc = Players:GetHumanoidDescriptionFromUserId(userId)
+		end)
+	end
+	desc = desc or Instance.new("HumanoidDescription")
+	-- la animación la hace el juego: fuera las animaciones del avatar
+	for _, prop in ipairs({ "IdleAnimation", "WalkAnimation", "RunAnimation", "JumpAnimation", "FallAnimation", "ClimbAnimation", "SwimAnimation" }) do
+		pcall(function()
+			desc[prop] = 0
+		end)
+	end
+	descriptions[userId] = desc
+	return desc
+end
+
+-- arma el muñeco R15 del avatar listo para pelear (sin scripts de animación, sin romperse al morir)
+local function buildAvatar(userId, name)
+	local rig = Players:CreateHumanoidModelFromDescription(descriptionFor(userId), Enum.HumanoidRigType.R15)
+	rig.Name = name
 	for _, d in ipairs(rig:GetDescendants()) do
-		if d:IsA("Decal") then
-			d:Destroy()
-		elseif d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" then
-			d.Color = d.Name:find("Hand") and DARK_STEEL or STEEL
-			d.Material = Enum.Material.Metal
+		if d:IsA("Script") or d:IsA("LocalScript") then
+			if d.Name == "Animate" then
+				d:Destroy() -- brazos y piernas se animan por código en el cliente
+			end
 		end
-	end
-	local function armor(name, host, size, offset, color, material)
-		local p = Instance.new("Part")
-		p.Name = name
-		p.Size = size
-		p.Color = color
-		p.Material = material or Enum.Material.Metal
-		p.CanCollide = false
-		p.CanQuery = false
-		p.CanTouch = false
-		p.Massless = true
-		p.TopSurface = Enum.SurfaceType.Smooth
-		p.BottomSurface = Enum.SurfaceType.Smooth
-		p.CFrame = host.CFrame * offset
-		local weld = Instance.new("WeldConstraint")
-		weld.Part0 = host
-		weld.Part1 = p
-		weld.Parent = p
-		p.Parent = rig
-		return p
-	end
-	local head, ut, lt = rig.Head, rig.UpperTorso, rig.LowerTorso
-	local hs = head.Size
-	armor("Helmet", head, hs * Vector3.new(1.15, 1.2, 1.15), CFrame.new(0, hs.Y * 0.08, 0), STEEL)
-	armor("Visor", head, Vector3.new(hs.X * 0.9, 0.12, 0.08), CFrame.new(0, hs.Y * 0.1, -hs.Z * 0.6), Color3.new(0.05, 0.05, 0.05), Enum.Material.SmoothPlastic)
-	armor("Crest", head, Vector3.new(0.18, 0.35, hs.Z * 1.0), CFrame.new(0, hs.Y * 0.75, 0), DARK_STEEL)
-	local us = ut.Size
-	armor("Breastplate", ut, us * Vector3.new(1.08, 1.02, 1.1), CFrame.new(), STEEL)
-	armor("Tabard", ut, Vector3.new(us.X * 0.7, us.Y * 1.55, 0.1), CFrame.new(0, -us.Y * 0.28, -us.Z * 0.58), Config.Tabards[1], Enum.Material.Fabric)
-	armor("TabardBack", ut, Vector3.new(us.X * 0.7, us.Y * 1.4, 0.1), CFrame.new(0, -us.Y * 0.3, us.Z * 0.58), Config.Tabards[1], Enum.Material.Fabric)
-	armor("Belt", lt, lt.Size * Vector3.new(1.12, 0.45, 1.15), CFrame.new(0, lt.Size.Y * 0.15, 0), Color3.fromRGB(70, 45, 25), Enum.Material.Leather)
-	for _, side in ipairs({ "Left", "Right" }) do
-		local ua = rig[side .. "UpperArm"]
-		armor("Pauldron", ua, Vector3.new(ua.Size.X * 1.6, ua.Size.Y * 0.35, ua.Size.Z * 1.5), CFrame.new(0, ua.Size.Y * 0.35, 0), STEEL)
-		local ll = rig[side .. "LowerLeg"]
-		armor("Greave", ll, ll.Size * Vector3.new(1.15, 0.9, 1.15), CFrame.new(), DARK_STEEL)
 	end
 	local hum = rig:FindFirstChildOfClass("Humanoid")
 	hum.MaxHealth = Config.MaxHealth
 	hum.Health = Config.MaxHealth
 	hum.WalkSpeed = Config.WalkSpeed
 	hum.BreakJointsOnDeath = false
-	rig.Parent = StarterPlayer
+	return rig
 end
-buildKnight()
+
+-- muñeco quieto del avatar para la vista previa de la armería (el cliente le pone la armadura)
+local previews = Instance.new("Folder")
+previews.Name = "MordoxPreviews"
+previews.Parent = ReplicatedStorage
+
+local function publishPreview(player)
+	local old = previews:FindFirstChild(tostring(player.UserId))
+	if old then
+		return
+	end
+	local ok, rig = pcall(buildAvatar, player.UserId, tostring(player.UserId))
+	if ok and rig then
+		rig.Parent = previews
+	end
+end
 
 ---------------------------------------------------------------------------
 -- Combate
@@ -293,7 +293,7 @@ local function startAttack(f, kind, angle, windupScale, flags)
 	end
 	startPhase(f, "windup", attackData(f).Windup * (windupScale or 1))
 	if f.hum then
-		f.hum.WalkSpeed = Config.AttackMoveSpeed / TS()
+		f.hum.WalkSpeed = speed(f, Config.AttackMoveSpeed)
 	end
 end
 
@@ -321,7 +321,7 @@ local function toIdle(f)
 	end
 	setState(f, "idle")
 	if f.hum then
-		f.hum.WalkSpeed = (f.sprint and Config.SprintSpeed or Config.WalkSpeed) / TS()
+		f.hum.WalkSpeed = speed(f, f.sprint and Config.SprintSpeed or Config.WalkSpeed)
 	end
 end
 
@@ -383,6 +383,7 @@ local function applyDamage(attacker, defender, amount, zone, hitPos)
 		return
 	end
 	defender.lastHitBy = attacker
+	amount = amount * ((defender.armorMul and defender.armorMul[zone]) or 1) -- la armadura de esa zona frena parte del golpe
 	FxEvent:FireAllClients("hit", hitPos, zone, amount, attacker.weapon.Slash.Type, attacker.player.Name, defender.char)
 	if attacker.isBot and not Config.Match.BotsDealDamage then
 		amount = 0 -- práctica: el dummy no saca vida
@@ -812,7 +813,7 @@ local function handleAction(player, action, a1, a2)
 			for _, other in pairs(fighters) do
 				if other.hum then
 					local base = other.state == "attack" and Config.AttackMoveSpeed or (other.sprint and Config.SprintSpeed or Config.WalkSpeed)
-					other.hum.WalkSpeed = base / scale
+					other.hum.WalkSpeed = base * (other.speedMul or 1) / scale
 					other.hum.UseJumpPower = true
 					other.hum.JumpPower = 50 / scale
 				end
@@ -837,7 +838,7 @@ local function handleAction(player, action, a1, a2)
 		if f then
 			f.sprint = a1 == true
 			if f.hum and f.state == "idle" then
-				f.hum.WalkSpeed = (f.sprint and Config.SprintSpeed or Config.WalkSpeed) / TS()
+				f.hum.WalkSpeed = speed(f, f.sprint and Config.SprintSpeed or Config.WalkSpeed)
 			end
 		end
 		return
@@ -906,7 +907,7 @@ local function handleAction(player, action, a1, a2)
 				setState(f, "parry", c.ParryWindow)
 			end
 			if f.hum then
-				f.hum.WalkSpeed = Config.AttackMoveSpeed / TS()
+				f.hum.WalkSpeed = speed(f, Config.AttackMoveSpeed)
 			end
 		end
 	elseif action == "unblock" then
@@ -957,7 +958,13 @@ local function spawnPlayer(player)
 		f.spawnBot()
 		return
 	end
-	player:LoadCharacter()
+	if player.Character then
+		player.Character:Destroy() -- el cuerpo anterior (LoadCharacter lo hacía solo)
+	end
+	local char = buildAvatar(player.UserId, player.Name)
+	char:PivotTo(pickSpawn())
+	player.Character = char
+	char.Parent = workspace
 end
 
 local tabardIndex = 0
@@ -986,32 +993,20 @@ local function styleOf(player)
 	return t
 end
 
+local BOT_GEAR = { Head = "yelmo", Chest = "placas", Legs = "grebas", Armor = "acero", Tabard = "rojo" }
+
 local function applyLook(player, char)
-	local gear = styleOf(player).Gear
-	local armorOpt = Config.GearOption("Armor", gear.Armor)
-	local tabardOpt = Config.GearOption("Tabard", gear.Tabard)
-	local helmet = gear.Helmet
-	for _, d in ipairs(char:GetChildren()) do
-		if d:IsA("BasePart") then
-			if d.Name == "Tabard" or d.Name == "TabardBack" then
-				d.Color = tabardOpt.Color
-			elseif d.Name == "Breastplate" or d.Name == "Pauldron" then
-				d.Color = armorOpt.Color
-			elseif d.Name == "Greave" then
-				d.Color = armorOpt.Dark
-			elseif d.Name == "Helmet" then
-				d.Color = helmet == "capucha" and Color3.fromRGB(70, 72, 78) or armorOpt.Color
-				d.Material = helmet == "capucha" and Enum.Material.DiamondPlate or Enum.Material.Metal
-				d.Transparency = helmet == "sin" and 1 or 0
-			elseif d.Name == "Visor" then
-				d.Transparency = (helmet == "sin" or helmet == "capucha") and 1 or 0
-			elseif d.Name == "Crest" then
-				d.Color = tabardOpt.Color
-				d.Transparency = helmet == "yelmo" and 0 or 1
-			end
+	local f = fighters[player]
+	local gear = player:IsA("Player") and styleOf(player).Gear or BOT_GEAR
+	Armor.apply(char, gear, false, not player:IsA("Player") and f and f.tabard or nil)
+	if f then
+		local fx = Armor.effects(gear)
+		f.armorMul = { head = fx.head, torso = fx.torso, legs = fx.legs }
+		f.speedMul = fx.speed
+		if f.hum and not f.dead then
+			f.hum.WalkSpeed = speed(f, f.state == "attack" and Config.AttackMoveSpeed or (f.sprint and Config.SprintSpeed or Config.WalkSpeed))
 		end
 	end
-	char:SetAttribute("Tabard", tabardOpt.Color)
 end
 
 local function loadStyle(player)
@@ -1075,16 +1070,7 @@ local function onCharacter(player, char)
 		char.AncestryChanged:Wait()
 	end
 	char:PivotTo(pickSpawn())
-	if player:IsA("Player") then
-		applyLook(player, char)
-	else
-		for _, d in ipairs(char:GetChildren()) do
-			if d.Name == "Tabard" or d.Name == "TabardBack" then
-				d.Color = f.tabard
-			end
-		end
-		char:SetAttribute("Tabard", f.tabard)
-	end
+	applyLook(player, char)
 	toIdle(f)
 	f.hum.Died:Connect(function()
 		if not f.dead then
@@ -1129,6 +1115,7 @@ Players.PlayerAdded:Connect(function(player)
 		end
 	end
 	loadStyle(player) -- lo que haya elegido la última vez
+	task.spawn(publishPreview, player)
 	spawnPlayer(player)
 end)
 
@@ -1300,7 +1287,12 @@ for i = 1, Config.Match.Bots or 0 do
 		if f.char then
 			f.char:Destroy()
 		end
-		local char = StarterPlayer.StarterCharacter:Clone()
+		local char = buildAvatar(0, botPlayer.Name)
+		for _, d in ipairs(char:GetDescendants()) do
+			if d:IsA("Decal") then
+				d:Destroy() -- el dummy no tiene cara
+			end
+		end
 		char.Name = botPlayer.Name
 		char.Parent = botFolder
 		task.spawn(function()
