@@ -500,7 +500,7 @@ local deathText = label({ AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.ne
 local help = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 14, 1, -14), Size = UDim2.new(0, 520, 0, 90), Font = FONT2,
 	MaxSize = 14, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Bottom,
 	TextColor3 = Color3.fromRGB(220, 210, 195), TextStrokeTransparency = 0.4, Parent = gui,
-	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · G: soltar o levantar el arma · Shift: correr · V: cámara · C: vista libre · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
+	Text = "Clic izq: golpe (mové el mouse para elegir la dirección) · Rueda arriba: estocada · Rueda abajo: golpe de arriba\nClic der: parry (con escudo: mantener) · Q: fintar · F: patada · G: soltar o levantar el arma · Shift: correr · V: cámara · Alt (mantener): vista libre · [ ]: FOV · Tab: tabla · F3: modo desarrollador · F4: cámara lenta · M: forja y ajustes · H: ocultar ayuda" })
 local debugText = label({ Position = UDim2.new(0, 14, 0, 60), Size = UDim2.new(0, 420, 0, 190), Font = Enum.Font.Code, MaxSize = 15,
 	TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top, TextColor3 = Color3.fromRGB(120, 255, 140),
 	TextStrokeTransparency = 0.3, Text = "", Visible = false, Parent = gui })
@@ -1021,9 +1021,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	elseif input.KeyCode == Enum.KeyCode.V then
 		firstPerson = not firstPerson
 		applyCameraMode()
-	elseif input.KeyCode == Enum.KeyCode.C then
-		-- vista libre para mirar tu caballero desde cualquier lado
-		freeCam.on = not freeCam.on
+	elseif input.KeyCode == Enum.KeyCode.LeftAlt then
+		-- vista libre mientras mantenés Alt: la cámara gira alrededor tuyo sin mover al caballero
+		freeCam.on = true
 		freeCam.look = camera.CFrame.LookVector
 		applyCameraMode()
 	elseif input.KeyCode == Enum.KeyCode.Tab then
@@ -1063,6 +1063,9 @@ UserInputService.InputEnded:Connect(function(input)
 		CombatEvent:FireServer("sprint", false)
 	elseif input.KeyCode == Enum.KeyCode.Tab then
 		board.Visible = false
+	elseif input.KeyCode == Enum.KeyCode.LeftAlt and freeCam.on then
+		freeCam.on = false -- al soltar Alt volvés a la cámara que tenías
+		applyCameraMode()
 	end
 end)
 
@@ -1469,7 +1472,7 @@ RunService.RenderStepped:Connect(function(dt)
 	local combo = char and char:GetAttribute("Combo") or 0
 	local unarmed = char and char:GetAttribute("Unarmed")
 	local riposteOpen = st == "riposte" or (st == "block" and serverNow() <= (char:GetAttribute("RiposteUntil") or 0))
-	stateText.Text = freeCam.on and "VISTA LIBRE · mové el mouse para girar · rueda para acercar · C para volver"
+	stateText.Text = freeCam.on and "VISTA LIBRE · soltá Alt para volver"
 		or unarmed and "SIN ARMA · G para levantar una del piso" or riposteOpen and "¡RIPOSTE! (atacá ya)" or os.clock() < toast.untilT and toast.text or combo >= 1 and st == "attack" and ("COMBO x" .. (combo + 1)) or st == "riposte" and "¡RIPOSTE!" or st == "disarmed" and "DESARMADO" or st == "stun" and "" or st == "block" and "BLOQUEANDO" or ""
 
 	local dead = not hum or hum.Health <= 0
