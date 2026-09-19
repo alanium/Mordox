@@ -122,8 +122,8 @@ function Armor.apply(char, gear, anchored, tabardColor)
 			add("ArmorBreastplate", "UpperTorso", V(1.16, 1.02, 1.22), V(0, 0.02, 0), metal)
 			for _, side in ipairs({ "Left", "Right" }) do
 				add("ArmorPauldron", side .. "UpperArm", V(1.6, 0.42, 1.5), V(0, 0.4, 0), metal)
-				add("ArmorVambrace", side .. "LowerArm", V(1.18, 0.9, 1.18), V(0, 0, 0), metal)
-				add("ArmorGauntlet", side .. "Hand", V(1.22, 1.1, 1.22), V(0, 0, 0), dark)
+				add("ArmorVambrace", side .. "LowerArm", V(1.1, 0.85, 1.1), V(0, 0.04, 0), metal)
+				add("ArmorGauntlet", side .. "Hand", V(1.1, 1.05, 1.1), V(0, 0, 0), dark)
 			end
 		end
 		local ut = part("UpperTorso")
@@ -146,8 +146,8 @@ function Armor.apply(char, gear, anchored, tabardColor)
 			if legs == 3 then
 				add("ArmorCuisse", side .. "UpperLeg", V(1.16, 0.8, 1.18), V(0, 0.08, -0.02), metal)
 				add("ArmorKnee", side .. "LowerLeg", V(1.2, 0.3, 1.2), V(0, 0.45, -0.08), dark)
-				add("ArmorGreave", side .. "LowerLeg", V(1.16, 0.85, 1.18), V(0, -0.05, 0), metal)
-				add("ArmorSabaton", side .. "Foot", V(1.16, 1.3, 1.12), V(0, 0.05, 0), dark)
+				add("ArmorGreave", side .. "LowerLeg", V(1.12, 0.85, 1.14), V(0, -0.05, 0), metal)
+				add("ArmorSabaton", side .. "Foot", V(1.08, 1.2, 1.06), V(0, 0.05, 0), dark)
 			end
 		end
 	end

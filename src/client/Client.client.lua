@@ -232,7 +232,7 @@ local knightVp, knightWorld, knightCam, knightView = viewport(UDim2.new(0, 34, 0
 swordCam.CFrame = CFrame.lookAt(Vector3.new(0, 0, 7.5), Vector3.new(0, 0, 0))
 knightCam.CFrame = CFrame.lookAt(Vector3.new(0, 0.4, 11), Vector3.new(0, 0.2, 0))
 
-local armorStats = label({ AnchorPoint = Vector2.new(0, 1), Position = UDim2.new(0, 34, 1, -54), Size = UDim2.new(0, 740, 0, 26), Font = FONT2,
+local armorStats = label({ Position = UDim2.new(0, 34, 0, 58), Size = UDim2.new(0, 740, 0, 22), Font = FONT2,
 	MaxSize = 17, TextColor3 = GOLD, TextXAlignment = Enum.TextXAlignment.Left, Text = "", Visible = false, Parent = loadout })
 local emptyView = label({ Position = UDim2.new(0, 34, 0, 80), Size = UDim2.new(0, 740, 1, -160), Font = FONT2, MaxSize = 20,
 	TextColor3 = Color3.fromRGB(150, 140, 125), TextWrapped = true, Text = "", Parent = loadout })
@@ -297,10 +297,11 @@ local function buildAvatarPreview()
 	model.PrimaryPart = model:FindFirstChild("HumanoidRootPart")
 	model.Parent = knightWorld
 	avatarPreview.model = model
+	knightView.yaw = math.pi -- que te mire de frente al abrir
 	-- el centro del cuerpo para girarlo y encuadrarlo
 	local box, size = model:GetBoundingBox()
 	avatarPreview.center = box.Position
-	knightView.dist = math.max(size.Y, 5) * 1.25 / (2 * math.tan(math.rad(13)))
+	knightView.dist = math.clamp(size.Y, 5, 7) * 1.4 / (2 * math.tan(math.rad(13))) -- entero, con aire arriba y abajo
 	return model
 end
 
