@@ -35,11 +35,12 @@ function Swing.SlashDir(angle, alpha)
 	return (side * math.cos(a) + FORWARD * math.sin(a)).Unit
 end
 
+-- guardia en reposo: la hoja bien parada y algo adelante, con las dos manos en la empuñadura
 function Swing.GuardDir(weapon)
 	if weapon.Kind == "twohand" then
-		return Vector3.new(0.25, 0.65, -0.72).Unit
+		return Vector3.new(0.3, 0.85, -0.43).Unit
 	end
-	return Vector3.new(0.15, 0.55, -0.82).Unit
+	return Vector3.new(0.14, 0.78, -0.61).Unit
 end
 
 -- Torso y cabeza como un cilindro elíptico: las manos lo rodean por delante en vez de atravesarlo
@@ -103,7 +104,7 @@ end
 rawPose = function(weapon, st)
 	local reach = Config.Combat.ArmReach
 	local guard = Swing.GuardDir(weapon)
-	local guardHands = PIVOT + Vector3.new(0.35, -0.35, -0.85)
+	local guardHands = PIVOT + Vector3.new(0.52, -0.22, -0.68) -- empuñadura delante del pecho derecho, sin taparte la cara
 	local state, t = st.State, math.clamp(st.T or 0, 0, 1)
 	if state == "attack" and st.Kind == "slash" then
 		local cocked = Swing.SlashDir(st.Angle, -35)

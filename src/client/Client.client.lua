@@ -851,13 +851,12 @@ local function animateKnight(char, t, dt)
 		local crossed = math.clamp(-side * localHand.X / 1.2, 0, 1)
 		return body:VectorToWorldSpace(Vector3.new(side * (1 - crossed), -1, 0.3 - crossed * 1.3))
 	end
-	local function clearWorld(p)
-		return body:PointToWorldSpace(Swing.ClearBody(body:PointToObjectSpace(p)))
-	end
 	aimLimb(k.rArm, base, elbowPole(base, 1))
 	local gripCF = CFrame.lookAt(base, base + dir, edge) -- el ancho de la hoja sigue al filo: corta con el filo, no de plano
 	if weapon.Kind == "twohand" then
-		local leftHand = clearWorld(base - dir * 0.55)
+		-- la izquierda agarra el mango más abajo, a la medida de la empuñadura de cada arma
+		-- (sin apartarla del cuerpo: si no, la mano se despega del mango)
+		local leftHand = base - dir * (weapon.Grip * 0.45 + 0.1)
 		aimLimb(k.lArm, leftHand, elbowPole(leftHand, -1))
 	else
 		local blocking = st.State == "block"
